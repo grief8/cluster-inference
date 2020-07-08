@@ -70,57 +70,64 @@ use support::keys;
     let mut exec = tvm_runtime::GraphExecutor::new(graph, &syslib).unwrap();
     exec.load_params(params);
 
-    let listener = TcpListener::bind(server_address).unwrap();
-    let mut sy_time = SystemTime::now();
-    for stream in listener.incoming() {
-        let mut stream = stream.unwrap();
-        //let mut server_session = tls_server(&mut stream);
-        let mut entropy = entropy_new();
-        let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
-        let mut cert = Certificate::from_pem(keys::PEM_CERT).unwrap();
-        let mut key = Pk::from_private_key(keys::PEM_KEY, None).unwrap();
-        let mut config = Config::new(Endpoint::Server, Transport::Stream, Preset::Default);
-        config.set_rng(Some(&mut rng));
-        config.push_cert(&mut *cert, &mut key).unwrap();
-        let mut ctx = Context::new(&config).unwrap();
-        let mut server_session = ctx.establish(&mut stream, None).unwrap();
-        println!("server_session connect!");
-        // let mut array: [u8; 1000] = [0; 1000];
-        // server_session.read(&mut array);
-        // let stg = match std::str::from_utf8(&array) {
-        //     Ok(v) => v,
-        //     Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-        // };
-        // println!("server_session.read: {}!", stg);
-        if let Err(_) =
-            server_session.read(exec.get_input("input").unwrap().data().view().as_mut_slice())
-        {
-            continue;
-        }
-        let ts1 = timestamp();
-        println!("TimeStamp: {}", ts1);
-        sy_time = SystemTime::now();
-        exec.run();
-        break;
-
-    }
     let flag = match client_address{
         "None" => false,
         _  => true,
     };
+    
+    println!("start client");
+    let mut socket = TcpStream::connect(client_address).unwrap();
+    let mut entropy = entropy_new();
+    let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
+    let mut cert = Certificate::from_pem(keys::PEM_CERT).unwrap();
+    let mut config = Config::new(Endpoint::Client, Transport::Stream, Preset::Default);
+    config.set_rng(Some(&mut rng));
+    config.set_ca_list(Some(&mut *cert), None);
+    let mut ctx = Context::new(&config).unwrap();
+    let mut client_session = ctx.establish(&mut socket, None).unwrap();
+    
+    
+    let listener = TcpListener::bind(server_address).unwrap();
+    let mut sy_time = SystemTime::now();
+    let mut duration:u128 = 1;
+
+    let mut entropy = entropy_new();
+    let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
+    let mut cert = Certificate::from_pem(keys::PEM_CERT).unwrap();
+    let mut key = Pk::from_private_key(keys::PEM_KEY, None).unwrap();
+    let mut config = Config::new(Endpoint::Server, Transport::Stream, Preset::Default);
+    config.set_rng(Some(&mut rng));
+    config.push_cert(&mut *cert, &mut key).unwrap();
+    let mut ctx = Context::new(&config).unwrap();
+    let mut server_session:Session;
+    //let mut conn :TcpListener;
+    let mut conn:TcpStream;
+    for stream in listener.incoming().map(Result::unwrap) {
+        conn = stream.try_clone();
+        
+        println!("server_session connect!");
+        break;
+    }
+    
+    unsafe{
+        println!("{:#?}",&conn);
+        server_session = ctx.establish(&mut conn, None).unwrap();
+        // if let Err(_) =
+        server_session.read(exec.get_input("input").unwrap().data().view().as_mut_slice());
+        println!("{:#?}",&conn);
+    }
+
+    // {
+    //     continue;
+    // }
+    let ts1 = timestamp();
+    println!("TimeStamp: {}", ts1);
+    sy_time = SystemTime::now();
+    exec.run();
+    duration = SystemTime::now().duration_since(sy_time).unwrap().as_micros();
     if flag{
-        println!("start client");
-        let mut socket = TcpStream::connect(client_address).unwrap();
-        let mut entropy = entropy_new();
-        let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
-        let mut cert = Certificate::from_pem(keys::PEM_CERT).unwrap();
-        let mut config = Config::new(Endpoint::Client, Transport::Stream, Preset::Default);
-        config.set_rng(Some(&mut rng));
-        config.set_ca_list(Some(&mut *cert), None);
-        let mut ctx = Context::new(&config).unwrap();
-        let mut client_session = ctx.establish(&mut socket, None).unwrap();
         client_session.write(exec.get_output(0).unwrap().data().as_slice());
     }
-    println!("{:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
+    println!("{:?}", duration);
  }
  

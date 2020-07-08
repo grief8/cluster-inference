@@ -77,12 +77,12 @@
     }
     let x = Array::from_shape_vec(shape, ran).unwrap();
     
+    let ts1 = timestamp();
+    println!("Begin time: {}", ts1);
     let sy_time = SystemTime::now();
     exec.set_input("input", x.into());
     exec.run();
 
-    let ts1 = timestamp();
-    println!("{}", ts1);
     let flag = match client_address{
         "None" => false,
         _  => true,
@@ -100,7 +100,9 @@
         let mut client_session = ctx.establish(&mut socket, None).unwrap();
         // println!("client_session connect!");
 
-        
+        // client_session.write(b"client message...");
+        let ts1 = timestamp();
+        println!("{}", ts1);
         client_session.write(exec.get_output(0).unwrap().data().as_slice());
     }
     
