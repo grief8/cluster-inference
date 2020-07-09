@@ -47,7 +47,7 @@ pub struct Scheduler<'a> {
 impl<'a> Scheduler<'a> {
     // Initialize the mapping table.
     // Maybe there is an easier way for configuraration loading.
-    pub fn init() -> Scheduler<'a> {
+    pub fn init(self) -> Scheduler<'a> {
         let mut map_table: Vec<(&str, &str, &str)> = vec![];
         let user_queue: Vec<User<'a>> = vec![];
         let slave_queue: Vec<Slave<'a>> = vec![];
