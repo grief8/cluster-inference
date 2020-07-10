@@ -87,20 +87,36 @@ fn main() -> std::io::Result<()> {
             let mut ctx = Context::new(&config).unwrap();
             let mut server_session = ctx.establish(&mut stream, None).unwrap();
             // println!("server_session connect!");
-            while true{
+            loop {
                 let mut array: [u8; 256] = [0; 256];
-                server_session.read(&mut array);
+                server_session.read(&mut array).unwrap();
                 let mut array = array.to_vec();
                 array.retain(|&x| x != 0);
-                let stg = match std::string::String::from_utf8(array) {
+                let msg = match std::string::String::from_utf8(array) {
                     Ok(v) => v,
                     Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
                 };
-                if stg == ""{
+                // Different measures according to value of msg.
+                if msg == ""{
                     break;
                 }
+                else if msg.starts_with("resnet18") || msg.starts_with("mobilenetv1"){
+                    // init_user(msg);
+                    println!("{:?}", msg);
+                }
+                else if &msg[..1] >= "0" && &msg[..1] <= "9"{
+                    // let msg = msg.parse::<i32>().unwrap();
+                    // apply4slave();
+                    println!("{:?}", msg);
+                }
+                else
+                {
+                    println!("{:?}", msg);
+                    server_session.write("wrong message!!!".as_bytes()).unwrap();
+                }
+
                 let mut queue = queue.lock().unwrap();
-                queue.push(stg);
+                queue.push(msg);
                 println!("{:?}", queue);
             }
             
