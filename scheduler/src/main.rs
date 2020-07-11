@@ -47,8 +47,8 @@ use std::{
 use ndarray::{Array, Array4};
 use std::{thread, time};
 use std::sync::{Arc, Mutex};
-// mod master;
-// use master::{Scheduler};
+mod master;
+use master::{Scheduler};
 fn timestamp() -> i64 {
     let start = SystemTime::now();
     let since_the_epoch = start
@@ -65,8 +65,8 @@ fn main() -> std::io::Result<()> {
     let server_address = config[2];
     let listener = TcpListener::bind(server_address).unwrap();
 
-    // let scheduler = Scheduler.init();
-    let mut queue = Arc::new(Mutex::new(vec![]));
+    let mut scheduler = Arc::new(Mutex::new(Scheduler{map_table: vec![], user_queue: vec![], slave_queue: vec![]}.init()));
+    // let mut queue = Arc::new(Mutex::new(vec![]));
     // let (tx, rx) = mpsc::channel();
     let mut thread_vec: Vec<thread::JoinHandle<()>> = Vec::new();
     
@@ -74,9 +74,11 @@ fn main() -> std::io::Result<()> {
     // let mut duration: u128 = 1;
     for stream in listener.incoming() {
         let mut stream = stream.unwrap();
-        let queue = queue.clone();
+        let scheduler = scheduler.clone(); // potential sync errors here
+        // let queue = queue.clone();
         // let tx = tx.clone();
         let handle = thread::spawn( move || {
+            let mut scheduler = scheduler.lock().unwrap();
             let mut entropy = entropy_new();
             let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
             let mut cert = Certificate::from_pem(keys::PEM_CERT).unwrap();
@@ -96,13 +98,19 @@ fn main() -> std::io::Result<()> {
                     Ok(v) => v,
                     Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
                 };
+                let msg = msg.strip_suffix('\n').unwrap();
                 // Different measures according to value of msg.
                 if msg == ""{
                     break;
                 }
                 else if msg.starts_with("resnet18") || msg.starts_with("mobilenetv1"){
                     // init_user(msg);
-                    println!("{:?}", msg);
+                    scheduler.add_user("localhost:2222", &msg);
+                    let uq = scheduler.user_queue.clone();
+                    // for user in uq{
+                    //     println!("sb: {:?}", user.sub_model);
+                    // }
+                    println!("{:?}", uq.len());
                 }
                 else if &msg[..1] >= "0" && &msg[..1] <= "9"{
                     // let msg = msg.parse::<i32>().unwrap();
@@ -115,9 +123,9 @@ fn main() -> std::io::Result<()> {
                     server_session.write("wrong message!!!".as_bytes()).unwrap();
                 }
 
-                let mut queue = queue.lock().unwrap();
-                queue.push(msg);
-                println!("{:?}", queue);
+                // let mut queue = queue.lock().unwrap();
+                // queue.push(msg);
+                // println!("{:?}", queue);
             }
             
         });
