@@ -48,7 +48,7 @@ use ndarray::{Array, Array4};
 use std::{thread, time};
 use std::sync::{Arc, Mutex};
 mod master;
-use master::{Scheduler};
+use master::{Scheduler, User};
 fn timestamp() -> i64 {
     let start = SystemTime::now();
     let since_the_epoch = start
@@ -79,6 +79,9 @@ fn main() -> std::io::Result<()> {
         // let tx = tx.clone();
         let handle = thread::spawn( move || {
             let mut scheduler = scheduler.lock().unwrap();
+            // let mut user = User{sub_model: vec![], user_ip: "",model: ""};
+            let mut slv_ip: String = "".to_string();
+            let mut model = "".to_string();
             let mut entropy = entropy_new();
             let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
             let mut cert = Certificate::from_pem(keys::PEM_CERT).unwrap();
@@ -99,13 +102,15 @@ fn main() -> std::io::Result<()> {
                     Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
                 };
                 let msg = msg.strip_suffix('\n').unwrap();
+                // println!("{:?}", msg);
                 // Different measures according to value of msg.
                 if msg == ""{
                     break;
                 }
                 else if msg.starts_with("resnet18") || msg.starts_with("mobilenetv1"){
                     // init_user(msg);
-                    scheduler.add_user("localhost:2222", &msg);
+                    model = msg.to_string();
+                    scheduler.add_user("localhost:2222", model);
                     let uq = scheduler.user_queue.clone();
                     // for user in uq{
                     //     println!("sb: {:?}", user.sub_model);
@@ -113,19 +118,20 @@ fn main() -> std::io::Result<()> {
                     println!("{:?}", uq.len());
                 }
                 else if &msg[..1] >= "0" && &msg[..1] <= "9"{
-                    // let msg = msg.parse::<i32>().unwrap();
-                    // apply4slave();
-                    println!("{:?}", msg);
+                // else if msg.starts_with("wabibabo"){
+                    // println!("num: {:?}", msg);
+                    let message: Vec<&str> = msg.split(',').collect();
+                    scheduler.change_slave_flag(slv_ip.as_str());
+                    let ip = scheduler.apply4slave("localhost:2222", message[1].to_string());
+                    slv_ip = ip.to_string();
+                    server_session.write(ip.as_bytes()).unwrap();
+                    println!("catch: {:?}", ip);
                 }
                 else
                 {
                     println!("{:?}", msg);
                     server_session.write("wrong message!!!".as_bytes()).unwrap();
                 }
-
-                // let mut queue = queue.lock().unwrap();
-                // queue.push(msg);
-                // println!("{:?}", queue);
             }
             
         });
