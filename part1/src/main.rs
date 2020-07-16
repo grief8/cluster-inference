@@ -17,11 +17,11 @@
  * under the License.
  */
 
- extern crate tvm_runtime;
- extern crate image;
- extern crate ndarray;
- extern crate rand;
- extern crate mbedtls;
+extern crate tvm_runtime;
+extern crate image;
+extern crate ndarray;
+extern crate rand;
+extern crate mbedtls;
 
 use std::net::{TcpListener, TcpStream};
 use mbedtls::rng::Rdrand;
@@ -37,24 +37,28 @@ use std::fmt::Write;
 mod support;
 use support::entropy::entropy_new;
 use support::keys;
- use rand::Rng;
- use std::{
-     convert::TryFrom as _,
-     io::{Read as _, Write as _},
-     time::{SystemTime, UNIX_EPOCH},
- };
+use ra_enclave::tls_enclave::attestation;
+use rand::Rng;
+use std::{
+    convert::TryFrom as _,
+    io::{Read as _, Write as _},
+    time::{SystemTime, UNIX_EPOCH},
+};
 //  use image::{FilterType, GenericImageView};
- use ndarray::{Array, Array4};
+use ndarray::{Array, Array4};
 
- fn timestamp() -> i64 {
-    let start = SystemTime::now();
-    let since_the_epoch = start
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards");
-    let ms = since_the_epoch.as_secs() as i64 * 1000i64 + (since_the_epoch.subsec_nanos() as f64 / 1_000_000.0) as i64;
-    ms
+fn timestamp() -> i64 {
+let start = SystemTime::now();
+let since_the_epoch = start
+    .duration_since(UNIX_EPOCH)
+    .expect("Time went backwards");
+let ms = since_the_epoch.as_secs() as i64 * 1000i64 + (since_the_epoch.subsec_nanos() as f64 / 1_000_000.0) as i64;
+ms
 }
- fn main() {
+fn main() {
+    println!("attestation start");
+    attestation();
+    println!("attestation end");
     let config = include_str!(concat!(env!("PWD"), "/config"));
     let config = config.split("\n");
     let config: Vec<&str> = config.collect(); 

@@ -1,0 +1,15 @@
+{
+    "linkable": true,
+    "random_nonce": false,
+    "use_platform_service": false,
+    "spid": "7E0D90F243226C78D6FDD2328A9624E7",
+    "primary_subscription_key": "bc7879b907624dfdabfdbcac67037646",
+    "secondary_subscription_key": "a8a049d90288467ab8e307be1bb12278",
+    "quote_trust_options": [
+        "GROUP_OUT_OF_DATE",
+        "CONFIGURATION_NEEDED"
+    ],
+    "sp_private_key_pem_path": "examples/data/sp-keys/private_key.pem",
+    "ias_root_cert_pem_path": "examples/data/Intel_SGX_Attestation_RootCA.pem",
+    "sigstruct_path": "../ra-enclave/target/x86_64-fortanix-unknown-sgx/debug/examples/tls-enclave.sig"
+}
