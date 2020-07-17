@@ -33,7 +33,8 @@ pub fn attestation() {
     // establish TLS-PSK with SP; enclave is the server
     let mut psk_callback = server::callback(&master_key);
     let mut rng = Rng::new();
-    let config = server::config(&mut rng, &do_attestation.unwrap();
+    let config = server::config(&mut rng, &mut psk_callback);
+    let mut ctx = server::context(&config).unwrap();
 
     // begin secure communication
     let mut session = ctx.establish(&mut sp_stream, None).unwrap();
