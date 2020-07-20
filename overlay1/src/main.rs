@@ -18,7 +18,7 @@
  */
 
 extern crate tvm_runtime;
-extern crate image;
+// extern crate image;
 extern crate ndarray;
 extern crate rand;
 extern crate mbedtls;
@@ -56,14 +56,16 @@ let ms = since_the_epoch.as_secs() as i64 * 1000i64 + (since_the_epoch.subsec_na
 ms
 }
 fn main() {
-    println!("attestation start");
-    attestation();
-    println!("attestation end");
     let config = include_str!(concat!(env!("PWD"), "/config"));
     let config = config.split("\n");
     let config: Vec<&str> = config.collect(); 
     let server_address = config[2];
     let client_address = config[3];
+    let attestation_port = config[4];
+
+    println!("attestation start");
+    attestation(attestation_port.to_string().parse::<u16>().unwrap());
+    println!("attestation end");
 
     let syslib = tvm_runtime::SystemLibModule::default();
     let graph_json = include_str!(concat!(env!("OUT_DIR"), "/graph.json"));

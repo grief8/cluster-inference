@@ -37,6 +37,8 @@ use std::fmt::Write;
 mod support;
 use support::entropy::entropy_new;
 use support::keys;
+use ra_enclave::tls_enclave::attestation;
+
 use rand::Rng;
 use std::{
     convert::TryFrom as _,
@@ -63,6 +65,14 @@ fn main() -> std::io::Result<()> {
     let config = config.split("\n");
     let config: Vec<&str> = config.collect(); 
     let server_address = config[2];
+    let server_address = config[2];
+    let client_address = config[3];
+    let attestation_port = config[4];
+
+    println!("attestation start");
+    attestation(attestation_port.to_string().parse::<u16>().unwrap());
+    println!("attestation end");
+
     let listener = TcpListener::bind(server_address).unwrap();
 
     let mut scheduler = Arc::new(Mutex::new(Scheduler{map_table: vec![], user_queue: vec![], slave_queue: vec![]}.init()));

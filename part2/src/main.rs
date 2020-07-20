@@ -17,11 +17,11 @@
  * under the License.
  */
 
- extern crate tvm_runtime;
- extern crate image;
- extern crate ndarray;
- extern crate rand;
- extern crate mbedtls;
+extern crate tvm_runtime;
+// extern crate image;
+extern crate ndarray;
+extern crate rand;
+extern crate mbedtls;
 
 use std::net::{TcpListener, TcpStream};
 use mbedtls::rng::Rdrand;
@@ -37,30 +37,35 @@ use std::fmt::Write;
 mod support;
 use support::entropy::entropy_new;
 use support::keys;
- use rand::Rng;
- use std::{
-     convert::TryFrom as _,
-     io::{Read as _, Write as _},
-     time::{SystemTime, UNIX_EPOCH},
- };
+use ra_enclave::tls_enclave::attestation;
+use rand::Rng;
+use std::{
+    convert::TryFrom as _,
+    io::{Read as _, Write as _},
+    time::{SystemTime, UNIX_EPOCH},
+};
 //  use image::{FilterType, GenericImageView};
- use ndarray::{Array, Array4};
+use ndarray::{Array, Array4};
 
- fn timestamp() -> i64 {
-    let start = SystemTime::now();
-    let since_the_epoch = start
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards");
-    let ms = since_the_epoch.as_secs() as i64 * 1000i64 + (since_the_epoch.subsec_nanos() as f64 / 1_000_000.0) as i64;
-    ms
+fn timestamp() -> i64 {
+let start = SystemTime::now();
+let since_the_epoch = start
+    .duration_since(UNIX_EPOCH)
+    .expect("Time went backwards");
+let ms = since_the_epoch.as_secs() as i64 * 1000i64 + (since_the_epoch.subsec_nanos() as f64 / 1_000_000.0) as i64;
+ms
 }
- fn main() {
+fn main() {
     let config = include_str!(concat!(env!("PWD"), "/config"));
     let config = config.split("\n");
     let config: Vec<&str> = config.collect(); 
     let server_address = config[2];
     let client_address = config[3];
+    let attestation_port = config[4];
 
+    println!("attestation start");
+    attestation(attestation_port.to_string().parse::<u16>().unwrap());
+    println!("attestation end");
     let syslib = tvm_runtime::SystemLibModule::default();
     let graph_json = include_str!(concat!(env!("OUT_DIR"), "/graph.json"));
     let params_bytes = include_bytes!(concat!(env!("OUT_DIR"), "/params.bin"));
@@ -90,43 +95,33 @@ use support::keys;
     let listener = TcpListener::bind(server_address).unwrap();
     let mut sy_time = SystemTime::now();
     let mut duration:u128 = 1;
-
-    let mut entropy = entropy_new();
-    let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
-    let mut cert = Certificate::from_pem(keys::PEM_CERT).unwrap();
-    let mut key = Pk::from_private_key(keys::PEM_KEY, None).unwrap();
-    let mut config = Config::new(Endpoint::Server, Transport::Stream, Preset::Default);
-    config.set_rng(Some(&mut rng));
-    config.push_cert(&mut *cert, &mut key).unwrap();
-    let mut ctx = Context::new(&config).unwrap();
-    let mut server_session:Session;
-    //let mut conn :TcpListener;
-    let mut conn:TcpStream;
-    for stream in listener.incoming().map(Result::unwrap) {
-        conn = stream.try_clone();
-        
+    for stream in listener.incoming() {
+        let mut stream = stream.unwrap();
+        let mut entropy = entropy_new();
+        let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
+        let mut cert = Certificate::from_pem(keys::PEM_CERT).unwrap();
+        let mut key = Pk::from_private_key(keys::PEM_KEY, None).unwrap();
+        let mut config = Config::new(Endpoint::Server, Transport::Stream, Preset::Default);
+        config.set_rng(Some(&mut rng));
+        config.push_cert(&mut *cert, &mut key).unwrap();
+        let mut ctx = Context::new(&config).unwrap();
+        let mut server_session = ctx.establish(&mut stream, None).unwrap();
         println!("server_session connect!");
+        if let Err(_) =
+            server_session.read(exec.get_input("input").unwrap().data().view().as_mut_slice())
+        {
+            continue;
+        }
+        let ts1 = timestamp();
+        println!("TimeStamp: {}", ts1);
+        sy_time = SystemTime::now();
+        exec.run();
+        duration = SystemTime::now().duration_since(sy_time).unwrap().as_micros();
+        if flag{
+            client_session.write(exec.get_output(0).unwrap().data().as_slice());
+        }
         break;
-    }
-    
-    unsafe{
-        println!("{:#?}",&conn);
-        server_session = ctx.establish(&mut conn, None).unwrap();
-        // if let Err(_) =
-        server_session.read(exec.get_input("input").unwrap().data().view().as_mut_slice());
-        println!("{:#?}",&conn);
-    }
 
-    // {
-    //     continue;
-    // }
-    let ts1 = timestamp();
-    println!("TimeStamp: {}", ts1);
-    sy_time = SystemTime::now();
-    exec.run();
-    duration = SystemTime::now().duration_since(sy_time).unwrap().as_micros();
-    if flag{
-        client_session.write(exec.get_output(0).unwrap().data().as_slice());
     }
     println!("{:?}", duration);
  }

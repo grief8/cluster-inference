@@ -3,10 +3,12 @@ mod config;
 mod context;
 mod error;
 mod ias;
+mod sp;
 
 pub use crate::config::*;
 pub use crate::context::*;
 pub use crate::error::*;
+pub use crate::sp::*;
 
 pub type SpRaResult<T> = Result<T, crate::error::SpRaError>;
 

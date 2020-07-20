@@ -18,8 +18,8 @@ L7pYuPODmV02by5r+7hgXFQkTADwFQBCmwIDAQAB\n\
 -----END RSA PUBLIC KEY-----\
 \0";
 
-pub fn attestation() {
-    let client_port = 7777;
+pub fn attestation(client_port: u16) {
+    // let client_port = 7777;
     let mut client_stream = tcp_accept(client_port).expect("Enclave: Client connection failed");
     eprintln!("Enclave: connected to client.");
     let context = EnclaveRaContext::init(SP_VKEY_PEM).unwrap();
