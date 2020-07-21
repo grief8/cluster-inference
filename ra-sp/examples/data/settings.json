@@ -11,5 +11,5 @@
     ],
     "sp_private_key_pem_path": "examples/data/sp-keys/private_key.pem",
     "ias_root_cert_pem_path": "examples/data/Intel_SGX_Attestation_RootCA.pem",
-    "sigstruct_path": "../ra-enclave/target/x86_64-fortanix-unknown-sgx/debug/examples/tls-enclave.sig"
+    "sigstruct_path": "../part1/target/x86_64-fortanix-unknown-sgx/debug/sgx-part1.sig"
 }

@@ -288,6 +288,7 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "byteorder",
+ "mbedtls",
  "ra-common",
  "sgx-crypto",
  "sgx-isa",

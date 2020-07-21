@@ -21,14 +21,13 @@ use std::process::Command;
 
 macro_rules! mf_dir {
     ($p:literal) => {
-        concat!(env!("CARGO_MANIFEST_DIR"), $p)
+        concat!(env!("TVM_HOME"), $p)
     };
 }
 
 fn main() {
     let out_dir = std::env::var("OUT_DIR").unwrap();
-
-    let build_output = Command::new(mf_dir!("/src/build_model.py"))
+    let build_output = Command::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/build_model.py"))
         .arg(&out_dir)
         .env(
             "PYTHONPATH",
@@ -46,7 +45,7 @@ fn main() {
         ["model.o", "graph.json", "params.bin"]
             .iter()
             .all(|f| { std::path::Path::new(&format!("{}/{}", out_dir, f)).exists() }),
-        "Could not build tvm lib: STDOUT:\n\n{}\n\nSTDERR\n\n{}",
+        "Could not build tvm lib: \nSTDOUT:\n\n{}\n\nSTDERR\n\n{}",
         String::from_utf8(build_output.stdout).unwrap().trim(),
         String::from_utf8(build_output.stderr).unwrap().trim()
     );
