@@ -9,15 +9,15 @@ use sgx_crypto::tls_psk::server;
 use std::io::Write;
 
 fn main() {
-    let client_port = 7777;
-    let mut client_stream = tcp_accept(client_port).expect("Enclave: Client connection failed");
+    let client_addr = "localhost:7777";
+    let mut client_stream = tcp_accept(client_addr).expect("Enclave: Client connection failed");
     eprintln!("Enclave: connected to client.");
     let context = EnclaveRaContext::init(SP_VKEY_PEM).unwrap();
     let (_signing_key, master_key) = context.do_attestation(&mut client_stream).unwrap();
 
     // talk to SP directly from now on
-    let sp_port = 1235;
-    let mut sp_stream = tcp_accept(sp_port).expect("Enclave: SP connection failed");
+    let sp_addr = "localhost:1235";
+    let mut sp_stream = tcp_accept(sp_addr).expect("Enclave: SP connection failed");
 
     // establish TLS-PSK with SP; enclave is the server
     let mut psk_callback = server::callback(&master_key);

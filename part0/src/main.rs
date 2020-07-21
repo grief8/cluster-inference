@@ -61,10 +61,10 @@ fn main() {
     let config: Vec<&str> = config.collect(); 
     let server_address = config[2];
     let client_address = config[3];
-    let attestation_port = config[4];
+    let sp_address = config[4];
 
     println!("attestation start");
-    attestation(attestation_port.to_string().parse::<u16>().unwrap());
+    attestation(client_address, sp_address);
     println!("attestation end");
     let syslib = tvm_runtime::SystemLibModule::default();
     let graph_json = include_str!(concat!(env!("OUT_DIR"), "/graph.json"));

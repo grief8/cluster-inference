@@ -5,10 +5,10 @@ use std::time::{Duration, Instant};
 
 const CONNECT_SLEEP_TIME_MILLIS: u64 = 10;
 
-pub fn tcp_connect(host: &str, port: u16, timeout: Duration) -> Result<TcpStream> {
+pub fn tcp_connect(addr: &str, timeout: Duration) -> Result<TcpStream> {
     let start = Instant::now();
     loop {
-        match TcpStream::connect((host, port)) {
+        match TcpStream::connect(addr) {
             Ok(s) => {
                 return Ok(s);
             }
@@ -22,7 +22,7 @@ pub fn tcp_connect(host: &str, port: u16, timeout: Duration) -> Result<TcpStream
     }
 }
 
-pub fn tcp_accept(port: u16) -> Result<TcpStream> {
-    let listener = TcpListener::bind(("localhost", port))?;
+pub fn tcp_accept(addr: &str) -> Result<TcpStream> {
+    let listener = TcpListener::bind(addr)?;
     Ok(listener.accept()?.0)
 }

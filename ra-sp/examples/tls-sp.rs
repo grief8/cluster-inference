@@ -11,7 +11,7 @@ fn parse_config_file(path: &str) -> SpConfig {
 }
 
 fn main() {
-    let client_port = 1234;
+    let client_port = "localhost:1234";
     let mut client_stream = tcp_accept(client_port).expect("SP: Client connection failed");
     eprintln!("SP: connected to client.");
     let config = parse_config_file("examples/data/settings.json");
@@ -20,11 +20,11 @@ fn main() {
     let result = context.do_attestation(&mut client_stream).unwrap();
 
     // talk to enclave directly from now on
-    let enclave_port = 1235;
-    let localhost = "localhost";
+    let enclave_port = "localhost:1235";
+    // let localhost = "localhost";
     let timeout = Duration::from_secs(5);
     let mut enclave_stream =
-        tcp_connect(localhost, enclave_port, timeout).expect("SP: Enclave connection failed");
+        tcp_connect(enclave_port, timeout).expect("SP: Enclave connection failed");
 
     // establish TLS-PSK with enclave; SP is the client
     let mut rng = Rng::new(&mut entropy).unwrap();

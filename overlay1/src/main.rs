@@ -64,7 +64,7 @@ fn main() {
     let attestation_port = config[4];
 
     println!("attestation start");
-    attestation(attestation_port.to_string().parse::<u16>().unwrap());
+    attestation(attestation_port.to_string().parse::<u16>().unwrap(), );
     println!("attestation end");
 
     let syslib = tvm_runtime::SystemLibModule::default();

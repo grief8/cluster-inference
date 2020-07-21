@@ -10,9 +10,9 @@ fn parse_config_file(path: &str) -> SpConfig {
     serde_json::from_reader(std::fs::File::open(path).unwrap()).unwrap()
 }
 
-fn service_provider(client_port: u16, enclave_port: u16) {
+fn service_provider(client_addr: &str, enclave_addr: &str) {
     // let client_port = 1234;
-    let mut client_stream = tcp_accept(client_port).expect("SP: Client connection failed");
+    let mut client_stream = tcp_accept(client_addr).expect("SP: Client connection failed");
     eprintln!("SP: connected to client.");
     let config = parse_config_file("examples/data/settings.json");
     let mut entropy = entropy_new();
@@ -24,7 +24,7 @@ fn service_provider(client_port: u16, enclave_port: u16) {
     let localhost = "localhost";
     let timeout = Duration::from_secs(5);
     let mut enclave_stream =
-        tcp_connect(localhost, enclave_port, timeout).expect("SP: Enclave connection failed");
+        tcp_connect(enclave_addr, timeout).expect("SP: Enclave connection failed");
 
     // establish TLS-PSK with enclave; SP is the client
     let mut rng = Rng::new(&mut entropy).unwrap();
