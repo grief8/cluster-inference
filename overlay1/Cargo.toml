@@ -23,6 +23,9 @@ edition = "2018"
 required-features = ["rdrand"]
 features = ["rdrand"]
 
+[features]
+default = ["byteorder"]
+
 [dependencies]
 tvm-runtime = { path = "/home/lifabing/tvm/rust/runtime" }
 ndarray = "0.12"

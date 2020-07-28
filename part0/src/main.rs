@@ -18,54 +18,77 @@
  */
 
 extern crate tvm_runtime;
-// extern crate image;
 extern crate ndarray;
 extern crate rand;
+extern crate byteorder;
 extern crate mbedtls;
 
-use std::net::{TcpListener, TcpStream};
-use mbedtls::rng::Rdrand;
+use std::net::TcpListener;
+use byteorder::{NetworkEndian, WriteBytesExt};                                                                                              
+//use std::io::Write;
+use ra_enclave::tls_enclave::attestation;
 use mbedtls::pk::Pk;
 use mbedtls::rng::CtrDrbg;
 use mbedtls::ssl::config::{Endpoint, Preset, Transport};
 use mbedtls::ssl::{Config, Context, Session};
 use mbedtls::x509::Certificate;
-use mbedtls::Result as TlsResult;
-use std::fmt::Write;
 
 #[path = "../../support/mod.rs"]
 mod support;
 use support::entropy::entropy_new;
 use support::keys;
-use ra_enclave::tls_enclave::attestation;
-use rand::Rng;
+
 use std::{
     convert::TryFrom as _,
     io::{Read as _, Write as _},
     time::{SystemTime, UNIX_EPOCH},
+    thread,
 };
-//  use image::{FilterType, GenericImageView};
-use ndarray::{Array, Array4};
+//use ndarray::{Array, Array4};
 
 fn timestamp() -> i64 {
-let start = SystemTime::now();
-let since_the_epoch = start
-    .duration_since(UNIX_EPOCH)
-    .expect("Time went backwards");
-let ms = since_the_epoch.as_secs() as i64 * 1000i64 + (since_the_epoch.subsec_nanos() as f64 / 1_000_000.0) as i64;
-ms
+    let start = SystemTime::now();
+    let since_the_epoch = start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
+    let ms = since_the_epoch.as_secs() as i64 * 1000i64 + (since_the_epoch.subsec_nanos() as f64 / 1_000_000.0) as i64;
+    ms
 }
+
 fn main() {
+    let mut thread_vec = vec![];
+    let handle = thread::spawn(move ||{
+        println!("attestation start");
+        let mut sign_key = attestation("127.0.0.1:7710","127.0.0.1:1310",keep_message).unwrap();
+        println!("attestation end");
+    });
+    thread_vec.push(handle);
+    let handle = thread::spawn(move ||{
+        do_tvm();
+    });
+    thread_vec.push(handle);
+    for handle in thread_vec {
+        // Wait for the thread to finish. Returns a result.
+        let _ = handle.join().unwrap();
+    }
+    
+ }
+ 
+pub fn keep_message(session:Session){
+    let mut sess = session;
+    let msg = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque non placerat risus, et lobortis quam. Mauris velit lorem, elementum id neque a, aliquet tempus turpis. Nam eu congue urna, in semper quam. Ut tristique gravida nunc nec feugiat. Proin tincidunt massa a arcu volutpat, sagittis dignissim velit convallis. Cras ac finibus lorem, nec congue felis. Pellentesque fermentum vitae ipsum sed gravida. Nulla consectetur sit amet erat a pellentesque. Donec non velit sem. Sed eu metus felis. Nullam efficitur consequat ante, ut commodo nisi pharetra consequat. Ut accumsan eget ligula laoreet dictum. Maecenas tristique porta convallis. Suspendisse tempor sodales velit, ac luctus urna varius eu. Ut ultrices urna vestibulum vestibulum euismod. Vivamus eu sapien urna.";
+    sess
+        .write_u32::<NetworkEndian>(msg.len() as u32)
+        .unwrap();
+    write!(&mut sess, "{}", msg).unwrap();
+}
+
+pub fn do_tvm(){
     let config = include_str!(concat!(env!("PWD"), "/config"));
     let config = config.split("\n");
     let config: Vec<&str> = config.collect(); 
     let server_address = config[2];
-    let client_address = config[3];
-    let sp_address = config[4];
-
-    println!("attestation start");
-    attestation(client_address, sp_address);
-    println!("attestation end");
+    //let client_address = config[3];
     let syslib = tvm_runtime::SystemLibModule::default();
     let graph_json = include_str!(concat!(env!("OUT_DIR"), "/graph.json"));
     let params_bytes = include_bytes!(concat!(env!("OUT_DIR"), "/params.bin"));
@@ -75,26 +98,7 @@ fn main() {
     let mut exec = tvm_runtime::GraphExecutor::new(graph, &syslib).unwrap();
     exec.load_params(params);
 
-    let flag = match client_address{
-        "None" => false,
-        _  => true,
-    };
-    
-    println!("start client");
-    let mut socket = TcpStream::connect(client_address).unwrap();
-    let mut entropy = entropy_new();
-    let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
-    let mut cert = Certificate::from_pem(keys::PEM_CERT).unwrap();
-    let mut config = Config::new(Endpoint::Client, Transport::Stream, Preset::Default);
-    config.set_rng(Some(&mut rng));
-    config.set_ca_list(Some(&mut *cert), None);
-    let mut ctx = Context::new(&config).unwrap();
-    let mut client_session = ctx.establish(&mut socket, None).unwrap();
-    
-    
     let listener = TcpListener::bind(server_address).unwrap();
-    let mut sy_time = SystemTime::now();
-    let mut duration:u128 = 1;
     for stream in listener.incoming() {
         let mut stream = stream.unwrap();
         let mut entropy = entropy_new();
@@ -114,15 +118,13 @@ fn main() {
         }
         let ts1 = timestamp();
         println!("TimeStamp: {}", ts1);
-        sy_time = SystemTime::now();
+        let sy_time = SystemTime::now();
         exec.run();
-        duration = SystemTime::now().duration_since(sy_time).unwrap().as_micros();
-        if flag{
-            client_session.write(exec.get_output(0).unwrap().data().as_slice());
-        }
+        let duration = SystemTime::now().duration_since(sy_time).unwrap().as_micros();
+        server_session.write(exec.get_output(0).unwrap().data().as_slice()).unwrap();
+        println!("{:?}", duration);
+        //only try once
         break;
-
     }
-    println!("{:?}", duration);
  }
- 
+

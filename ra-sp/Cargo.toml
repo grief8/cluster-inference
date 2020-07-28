@@ -25,6 +25,13 @@ sgx-isa = "0.3.1"
 aesm-client = "0.2.0"
 sgx-crypto = { path = "../sgx-crypto" }
 ra-common = { path = "../ra-common" }
+http-serde = "1.0.1"
+
+[target.'cfg(target_env = "sgx")'.dependencies]
+mbedtls = { git = "https://github.com/grief8/rust-mbedtls.git", default-features = false, features = ["sgx"] }
+
+[target.'cfg(not(target_env = "sgx"))'.dependencies]
+mbedtls = { git = "https://github.com/grief8/rust-mbedtls.git" } 
 
 [[example]]
 name = "tls-sp"

@@ -62,14 +62,14 @@ fn main() {
     let handle = thread::spawn(move ||{
         println!("attestation start");
         //attestation!{7777,1235};
-        attestation("127.0.0.1:7777","127.0.0.1:1235",keep_message);
+        let mut sign_key = attestation("127.0.0.1:7710","127.0.0.1:1310",keep_message).unwrap();
         println!("attestation end");
     });
     thread_vec.push(handle);
-    // let handle = thread::spawn(move ||{
-    //     do_tvm();
-    // });
-    // thread_vec.push(handle);
+    let handle = thread::spawn(move ||{
+        do_tvm();
+    });
+    thread_vec.push(handle);
     for handle in thread_vec {
         // Wait for the thread to finish. Returns a result.
         let _ = handle.join().unwrap();
@@ -77,12 +77,14 @@ fn main() {
     
  }
  
- pub fn keep_message(sess:Session){
-    let mut session = sess;
-    // let msg = "enclave macro!";
-    // session.write_u32::<NetworkEndian>(msg.len() as u32).unwrap();
-    // write!(&mut session, "{}", msg).unwrap();
- }
+pub fn keep_message(session:Session){
+    let mut sess = session;
+    let msg = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque non placerat risus, et lobortis quam. Mauris velit lorem, elementum id neque a, aliquet tempus turpis. Nam eu congue urna, in semper quam. Ut tristique gravida nunc nec feugiat. Proin tincidunt massa a arcu volutpat, sagittis dignissim velit convallis. Cras ac finibus lorem, nec congue felis. Pellentesque fermentum vitae ipsum sed gravida. Nulla consectetur sit amet erat a pellentesque. Donec non velit sem. Sed eu metus felis. Nullam efficitur consequat ante, ut commodo nisi pharetra consequat. Ut accumsan eget ligula laoreet dictum. Maecenas tristique porta convallis. Suspendisse tempor sodales velit, ac luctus urna varius eu. Ut ultrices urna vestibulum vestibulum euismod. Vivamus eu sapien urna.";
+    sess
+        .write_u32::<NetworkEndian>(msg.len() as u32)
+        .unwrap();
+    write!(&mut sess, "{}", msg).unwrap();
+}
 
 pub fn do_tvm(){
     let config = include_str!(concat!(env!("PWD"), "/config"));

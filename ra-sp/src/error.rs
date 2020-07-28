@@ -8,6 +8,7 @@ pub enum SpRaError {
     SigstructMismatched,
     EnclaveInDebugMode,
     EnclaveNotTrusted,
+    ClientConfigNotFound,
 }
 
 impl std::convert::From<std::io::Error> for SpRaError {

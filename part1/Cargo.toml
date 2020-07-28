@@ -16,7 +16,7 @@
 # under the License.
 
 [package]
-name = "sgx-part1"
+name = "sgx-part0"
 version = "0.1.0"
 authors = ["Fabing Li <1349212501@qq.com>"]
 edition = "2018"

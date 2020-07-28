@@ -17,40 +17,44 @@
  * under the License.
  */
 
- extern crate tvm_runtime;
- extern crate image;
- extern crate ndarray;
- extern crate rand;
- extern crate mbedtls;
+extern crate tvm_runtime;
+extern crate ndarray;
+extern crate rand;
+extern crate byteorder;
+extern crate mbedtls;
 
-use std::net::{TcpListener, TcpStream};
-use mbedtls::rng::Rdrand;
-use mbedtls::pk::Pk;
+use byteorder::{NetworkEndian, ReadBytesExt};
+use std::net::{TcpListener, TcpStream};                                                                                        
+use std::io::{Write, Read};
+use ra_enclave::tls_enclave::{attestation_get_report, HttpRespWrap};
+use ra_enclave::attestation_response::AttestationResponse;
+use sgx_crypto::signature::{VerificationKey};
+use sgx_crypto::random::Rng;
 use mbedtls::rng::CtrDrbg;
+use mbedtls::pk::Pk;
 use mbedtls::ssl::config::{Endpoint, Preset, Transport};
 use mbedtls::ssl::{Config, Context, Session};
 use mbedtls::x509::Certificate;
 use mbedtls::Result as TlsResult;
-use std::fmt::Write;
 
 #[path = "../../support/mod.rs"]
 mod support;
 use support::entropy::entropy_new;
 use support::keys;
-use ra_enclave::tls_enclave::attestation;
 
-use rand::Rng;
+
 use std::{
     convert::TryFrom as _,
     io::{Read as _, Write as _},
     time::{SystemTime, UNIX_EPOCH},
 };
+use serde_json::{Result, Value};
 //  use image::{FilterType, GenericImageView};
 use ndarray::{Array, Array4};
 use std::{thread, time};
 use std::sync::{Arc, Mutex};
 mod master;
-use master::{Scheduler, User};
+use master::{Scheduler, User, Slave};
 fn timestamp() -> i64 {
     let start = SystemTime::now();
     let since_the_epoch = start
@@ -62,24 +66,45 @@ fn timestamp() -> i64 {
 
 fn main() -> std::io::Result<()> {
     let config = include_str!(concat!(env!("PWD"), "/config"));
-    let config = config.split("\n");
-    let config: Vec<&str> = config.collect(); 
-    let server_address = config[2];
-    let server_address = config[2];
-    let client_address = config[3];
-    let attestation_port = config[4];
+    let config: Value = serde_json::from_str(config).unwrap();
+    let server_address = config["server_address"].as_str().unwrap();
+    let client_address = config["client_address"].as_str().unwrap();
+    let attestation_address = config["attestation_address"].as_str().unwrap();
+    let sp_address = config["sp_address"].as_str().unwrap();
 
+    let map_table = config.clone();
+    let user_queue: Vec<User> = vec![];
+    let mut slave_queue: Vec<Slave> = vec![];
+    // for i in 0..config["slave_address"]["resnet18"]["slave"].as_object().unwrap().len(){
+    //     slave_queue.push(Slave{busy_flag: false, slave_ip: config["slave_address"]["resnet18"]["slave"][i.to_string()].as_str().unwrap()})
+    // }
+    // for i in 0..config["slave_address"]["mobilenetv1"]["slave"].as_object().unwrap().len(){
+    //     slave_queue.push(Slave{busy_flag: false, slave_ip: config["slave_address"]["mobilenetv1"]["slave"][i.to_string()].as_str().unwrap()})
+    // }
+    let scheduler = Scheduler {map_table: map_table, user_queue, slave_queue }.init(config.clone());
     println!("attestation start");
-    attestation(attestation_port.to_string().parse::<u16>().unwrap());
+    let mut sign_key = attestation_get_report(client_address, sp_address, keep_message).unwrap();
+    {
+        let mut rng = Rng::new();
+        let message = [0x1,0x2,0x3,0x4,0x5,0x6,0x7];
+        let sign_mess = sign_key.ecdsa_sign(&message, &mut rng).unwrap();
+        let public_key = sign_key.get_public_key().unwrap();
+        println!("public_key:{:x?}", &public_key);
+        let mut verify_key = VerificationKey::new_from_binary(&public_key).expect("get new verify public key failed!");
+        verify_key.verify(&message, &sign_mess).expect("verify failed!");
+    }
     println!("attestation end");
 
     let listener = TcpListener::bind(server_address).unwrap();
 
-    let mut scheduler = Arc::new(Mutex::new(Scheduler{map_table: vec![], user_queue: vec![], slave_queue: vec![]}.init()));
+    let mut mt: Value = serde_json::from_str("{}").unwrap();
+    let mut config: &'static str = include_str!(concat!(env!("PWD"), "/config"));
+    let mut scheduler = Arc::new(Mutex::new(scheduler));
     // let mut queue = Arc::new(Mutex::new(vec![]));
     // let (tx, rx) = mpsc::channel();
     let mut thread_vec: Vec<thread::JoinHandle<()>> = Vec::new();
-    
+    // let serialized = serde_json::to_string(&scheduler).unwrap();
+    // println!("serializeds = {}", serialized);
     // let mut sy_time = SystemTime::now();
     // let mut duration: u128 = 1;
     for stream in listener.incoming() {
@@ -107,35 +132,39 @@ fn main() -> std::io::Result<()> {
                 server_session.read(&mut array).unwrap();
                 let mut array = array.to_vec();
                 array.retain(|&x| x != 0);
-                let msg = match std::string::String::from_utf8(array) {
+                let mut msg = match std::string::String::from_utf8(array) {
                     Ok(v) => v,
                     Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
                 };
-                let msg = msg.strip_suffix('\n').unwrap();
-                // println!("{:?}", msg);
+                if msg.ends_with("\n"){
+                    msg = msg.strip_suffix('\n').unwrap().to_string();
+                }
+                // println!("raw message: {:?}", msg);
                 // Different measures according to value of msg.
+                // let msg = msg.clone();
                 if msg == ""{
+                    scheduler.change_slave_flag(slv_ip.clone());
                     break;
                 }
                 else if msg.starts_with("resnet18") || msg.starts_with("mobilenetv1"){
-                    // init_user(msg);
                     model = msg.to_string();
-                    scheduler.add_user("localhost:2222", model);
-                    let uq = scheduler.user_queue.clone();
+                    scheduler.add_user(model.clone());
+                    let ip = scheduler.apply4slave(model, slv_ip.clone());
+                    if ip.starts_with(','){
+                        slv_ip = ip.clone().strip_prefix(',').unwrap().to_string();
+                    }
+                    else{
+                        let m = ip.clone();
+                        let m: Vec<&str> = m.split(',').collect();
+                        slv_ip = m[1].to_string();
+                    }
+                    server_session.write(format!("{},{}",ip,"key").as_bytes()).unwrap();
+                    println!("{}", format!("{},{}",ip,"key"));
+                    // let uq = scheduler.user_queue.clone();
                     // for user in uq{
                     //     println!("sb: {:?}", user.sub_model);
                     // }
-                    println!("{:?}", uq.len());
-                }
-                else if &msg[..1] >= "0" && &msg[..1] <= "9"{
-                // else if msg.starts_with("wabibabo"){
-                    // println!("num: {:?}", msg);
-                    let message: Vec<&str> = msg.split(',').collect();
-                    scheduler.change_slave_flag(slv_ip.as_str());
-                    let ip = scheduler.apply4slave("localhost:2222", message[1].to_string());
-                    slv_ip = ip.to_string();
-                    server_session.write(ip.as_bytes()).unwrap();
-                    println!("catch: {:?}", ip);
+                    // println!("{:?}", uq.len());
                 }
                 else
                 {
@@ -155,5 +184,41 @@ fn main() -> std::io::Result<()> {
     // println!("{:?}", queue);
     // println!("{:?}", duration);
     Ok(())   
- }
- 
+}
+pub fn keep_message(socket: TcpStream){
+    let mut sock = socket;
+    loop{
+        let id = sock.read_u8().unwrap();
+        if id == 250u8{
+            break;
+        }
+        println!("receiced id is: {:?}", id);
+        let len  = sock.read_u32::<NetworkEndian>().unwrap() as usize;
+        println!("httpresp header len: {:?}", len);
+        let mut header = vec![0u8; len];
+        sock.read_exact(&mut header[..]).unwrap();
+        let header: HttpRespWrap = serde_json::from_slice(&header).unwrap();
+        let len  = sock.read_u32::<NetworkEndian>().unwrap() as usize;
+        let mut body = vec![0u8; len];
+        sock.read_exact(&mut body[..]).unwrap();
+        
+        let attresp = AttestationResponse::from_response(&header.map, body).unwrap();
+        // println!("{:?}", attresp.isv_enclave_quote_body);
+        let quote = base64::decode(&attresp.isv_enclave_quote_body).unwrap();
+        if cfg!(feature = "verbose") {
+            println!("\nmr enclave value:");
+            for i in &quote[112..144]{
+                print!("0x{:>0width$x?}, ", i,width=2);   
+            }
+            println!("\nmr signer value:");
+            for i in &quote[176..208]{
+                print!("0x{:>0width$x?}, ", i,width=2);   
+            }
+            println!("\nsigner public key:");
+            for i in &quote[399..432]{
+                print!("0x{:>0width$x?}, ", i,width=2);   
+            }
+            println!();
+        }      
+    }
+}

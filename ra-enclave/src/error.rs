@@ -26,3 +26,10 @@ impl std::convert::From<sgx_crypto::error::CryptoError> for LocalAttestationErro
         Self::Crypto(e)
     }
 }
+
+#[derive(Debug)]
+pub enum AttestationError {
+    MismatchedIASRootCertificate,
+    InvalidIASCertificate,
+    BadSignature,
+}

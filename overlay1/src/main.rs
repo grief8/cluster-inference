@@ -43,6 +43,7 @@ use std::{
     convert::TryFrom as _,
     io::{Read as _, Write as _},
     time::{SystemTime, UNIX_EPOCH},
+    slice,
 };
 //  use image::{FilterType, GenericImageView};
 use ndarray::{Array, Array4};
@@ -55,6 +56,34 @@ let since_the_epoch = start
 let ms = since_the_epoch.as_secs() as i64 * 1000i64 + (since_the_epoch.subsec_nanos() as f64 / 1_000_000.0) as i64;
 ms
 }
+
+fn gen_input_data(shape: (i32, i32, i32, i32)) -> Vec<f32>{
+    let mut rng =rand::thread_rng();
+    let mut ran = vec![];
+    for _i in 0..shape.0*shape.1*shape.2*shape.3{
+        ran.push(rng.gen::<f32>()*256.);
+    }
+    // let data = Array::from_shape_vec(shape, ran).unwrap();
+    ran
+}
+
+fn launch_slave_session(address: &str, key: &str, data: &mut [u8]){
+    
+    println!("connecting to {:#?}", address);
+    let mut socket = TcpStream::connect(address).unwrap();
+    let mut entropy = entropy_new();
+    let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
+    let mut cert = Certificate::from_pem(keys::PEM_CERT).unwrap();
+    let mut config = Config::new(Endpoint::Client, Transport::Stream, Preset::Default);
+    config.set_rng(Some(&mut rng));
+    config.set_ca_list(Some(&mut *cert), None);
+    let mut ctx = Context::new(&config).unwrap();
+    let mut client_session = ctx.establish(&mut socket, None).unwrap();
+    println!("connecting to {:#?}", address);
+    client_session.write(data);
+    client_session.read(data).unwrap();
+
+}
 fn main() {
     let config = include_str!(concat!(env!("PWD"), "/config"));
     let config = config.split("\n");
@@ -64,24 +93,19 @@ fn main() {
     let attestation_port = config[4];
 
     println!("attestation start");
-    attestation(attestation_port.to_string().parse::<u16>().unwrap(), );
+    // attestation(attestation_port.to_string().parse::<u16>().unwrap(), );
     println!("attestation end");
-
-    let syslib = tvm_runtime::SystemLibModule::default();
-    let graph_json = include_str!(concat!(env!("OUT_DIR"), "/graph.json"));
-    let params_bytes = include_bytes!(concat!(env!("OUT_DIR"), "/params.bin"));
-    let params = tvm_runtime::load_param_dict(params_bytes).unwrap();
-     
-    let graph = tvm_runtime::Graph::try_from(graph_json).unwrap();
-    let mut exec = tvm_runtime::GraphExecutor::new(graph, &syslib).unwrap();
-    exec.load_params(params);
 
     let flag = match client_address{
         "None" => false,
         _  => true,
     };
     
-    println!("start client");
+    let mut data= gen_input_data((1, 3, 224, 224));
+    let mut user_data = unsafe{
+        slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, data.len() * 4)
+    };
+    println!("connecting to scheduler {:?}", client_address);
     let mut socket = TcpStream::connect(client_address).unwrap();
     let mut entropy = entropy_new();
     let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
@@ -91,39 +115,39 @@ fn main() {
     config.set_ca_list(Some(&mut *cert), None);
     let mut ctx = Context::new(&config).unwrap();
     let mut client_session = ctx.establish(&mut socket, None).unwrap();
-    
-    
-    let listener = TcpListener::bind(server_address).unwrap();
-    let mut sy_time = SystemTime::now();
-    let mut duration:u128 = 1;
-    for stream in listener.incoming() {
-        let mut stream = stream.unwrap();
-        let mut entropy = entropy_new();
-        let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
-        let mut cert = Certificate::from_pem(keys::PEM_CERT).unwrap();
-        let mut key = Pk::from_private_key(keys::PEM_KEY, None).unwrap();
-        let mut config = Config::new(Endpoint::Server, Transport::Stream, Preset::Default);
-        config.set_rng(Some(&mut rng));
-        config.push_cert(&mut *cert, &mut key).unwrap();
-        let mut ctx = Context::new(&config).unwrap();
-        let mut server_session = ctx.establish(&mut stream, None).unwrap();
-        println!("server_session connect!");
-        if let Err(_) =
-            server_session.read(exec.get_input("input").unwrap().data().view().as_mut_slice())
-        {
-            continue;
+    client_session.write("resnet18,127.0.0.1".as_bytes());
+    loop{
+        let mut array: [u8; 256] = [0; 256];
+        client_session.read(&mut array).unwrap();
+        let mut array = array.to_vec();
+        array.retain(|&x| x != 0);
+        let mut msg = match std::string::String::from_utf8(array) {
+            Ok(v) => v,
+            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+        };
+        println!("msg: {:?}", msg);
+        if msg.ends_with('\n') {
+            msg = msg.strip_suffix('\n').unwrap().to_string();
         }
-        let ts1 = timestamp();
-        println!("TimeStamp: {}", ts1);
-        sy_time = SystemTime::now();
-        exec.run();
-        duration = SystemTime::now().duration_since(sy_time).unwrap().as_micros();
-        if flag{
-            client_session.write(exec.get_output(0).unwrap().data().as_slice());
+        if msg.starts_with("finished"){
+            let message:Vec<&str> = msg.split(",").collect();
+            launch_slave_session(message[1], message[2], user_data);
+            // println!("{:#?}", result);
+            break;
         }
-        break;
-
+        else {
+            let message:Vec<&str> = msg.split(",").collect();
+            println!("message: {:?}", message);
+            launch_slave_session(message[1], message[2], user_data);
+            client_session.write("resnet18,127.0.0.1".as_bytes());
+            // println!("Result: {:#?}", user_data);
+        }
     }
-    println!("{:?}", duration);
  }
  
+  pub fn keep_message(sess:Session){
+    let mut session = sess;
+    // let msg = "enclave macro!";
+    // session.write_u32::<NetworkEndian>(msg.len() as u32).unwrap();
+    // write!(&mut session, "{}", msg).unwrap();
+ }

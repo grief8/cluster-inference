@@ -17,7 +17,8 @@ use std::convert::TryInto;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
-use aesm_client::unix::AesmClientExt;
+// use aesm_client::unix::AesmClientExt;
+
 pub struct SpRaContext<'a> {
     config: SpConfig,
     sigstruct: sigstruct::Sigstruct,
@@ -49,14 +50,14 @@ impl<'a> SpRaContext<'a> {
         config.quote_trust_options.sort();
         config.pse_trust_options.as_mut().map(|v| v.sort());
 
-        let sp_private_key =
-            SigningKey::new_from_file(Path::new(&config.sp_private_key_pem_path), None)?;
+        
 
         let cert = X509Cert::new_from_pem_file(Path::new(&config.ias_root_cert_pem_path))?;
 
         let mut rng = Rng::new(enthropy)?;
         let key_exchange = OneWayAuthenticatedDHKE::generate_keypair(&mut rng)?;
-
+        let sp_private_key =
+            SigningKey::new_from_file(Path::new(&config.sp_private_key_pem_path), None)?;
         let mut sigstruct = File::open(Path::new(&config.sigstruct_path))?;
         let sigstruct = sigstruct::read(&mut sigstruct)?;
 
@@ -73,10 +74,17 @@ impl<'a> SpRaContext<'a> {
             sk_mk: None,
         })
     }
-
+    //get a shared reference of SpConfig
+    pub fn get_spconfig(&self) -> &SpConfig {
+        &self.config
+    }
+    //get a shared reference of IasClient
+    pub fn get_ias_client(&mut self) -> &mut IasClient {
+        &mut self.ias_client
+    }
     #[tokio::main]
     pub async fn do_attestation(
-        mut self,
+        &mut self,
         mut client_stream: &mut (impl Read + Write),
     ) -> SpRaResult<AttestationResult> {
         // Not using MSG0 for now.
@@ -190,9 +198,9 @@ impl<'a> SpRaContext<'a> {
         if !msg3.verify_mac(self.smk.as_mut().unwrap()).is_ok() {
             return Err(SpRaError::IntegrityError);
         }
-
         let quote_digest: Sha256Digest = (&msg3.quote.as_ref()[368..400]).try_into().unwrap();
-        if self.verification_digest.as_ref().unwrap() != &quote_digest {
+        //only try to compare 31bytes sha256 result,because the length is only to 64bytes and signer publick key need 33 bytes
+        if &self.verification_digest.as_ref().unwrap()[..31] != &quote_digest[..31] {
             return Err(SpRaError::IntegrityError);
         }
 
