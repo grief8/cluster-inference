@@ -1,7 +1,7 @@
 use crate::attestation_response::AttestationResponse;
 use crate::error::{AttestationError, IasError};
-use hyper::body::HttpBody as _;
-use hyper::{client::HttpConnector, Body, Client, Request};
+use hyper::body::HttpBody;
+use hyper::{client::HttpConnector, Body, Client, Request, Response};
 use hyper_tls::HttpsConnector;
 use ra_common::msg::{Gid, Quote};
 use sgx_crypto::certificate::X509Cert;
@@ -14,6 +14,7 @@ const REPORT_PATH: &str = "/attestation/v3/report";
 pub struct IasClient {
     https_client: Client<HttpsConnector<HttpConnector>>,
     root_ca_cert: X509Cert,
+    pub http_resp:  Option<Response<Vec<u8>>>,
 }
 
 impl IasClient {
@@ -21,6 +22,7 @@ impl IasClient {
         Self {
             https_client: Client::builder().build::<_, hyper::Body>(HttpsConnector::new()),
             root_ca_cert,
+            http_resp: None,
         }
     }
 
@@ -52,11 +54,16 @@ impl IasClient {
     }
 
     pub async fn verify_attestation_evidence(
-        &self,
+        &mut self,
         quote: &Quote,
         subscription_key: &str,
     ) -> Result<AttestationResponse, IasError> {
         let uri = format!("{}{}", BASE_URI, REPORT_PATH);
+        if cfg!(feature = "verbose") {
+            eprintln!("==============msg3.quote Result==============");
+            eprintln!("{:?}", base64::encode(&quote[..432]));
+            eprintln!("==============================================");
+        }
         let quote_base64 = base64::encode(&quote[..]);
         let body = format!("{{\"isvEnclaveQuote\":\"{}\"}}", quote_base64);
         let req = Request::post(uri)
@@ -69,13 +76,17 @@ impl IasClient {
             return Err(IasError::Attestation(AttestationError::Connection(
                 resp.status(),
             )));
-        }
+        } 
+        
         let mut body = Vec::new();
         while let Some(chunk) = resp.body_mut().data().await {
             body.write_all(&chunk.unwrap()).unwrap();
-        }
-
-        AttestationResponse::from_response(&self.root_ca_cert, resp.headers(), body)
-            .map_err(|e| IasError::Attestation(e))
+        }  
+        let body2 = body.clone();    
+        let attresp = AttestationResponse::from_response(&self.root_ca_cert, resp.headers(), body)
+            .map_err(|e| IasError::Attestation(e));
+        let (http_parts, _) = resp.into_parts();
+        self.http_resp = Some(Response::from_parts(http_parts,body2));
+        attresp   
     }
 }

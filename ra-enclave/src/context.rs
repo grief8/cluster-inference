@@ -7,7 +7,7 @@ use sgx_crypto::cmac::{Cmac, MacTag};
 use sgx_crypto::digest::sha256;
 use sgx_crypto::key_exchange::OneWayAuthenticatedDHKE;
 use sgx_crypto::random::Rng;
-use sgx_crypto::signature::VerificationKey;
+use sgx_crypto::signature::{VerificationKey, SigningKey};
 use sgx_isa::{Report, Targetinfo};
 use std::io::{Read, Write};
 use std::mem::size_of;
@@ -15,20 +15,24 @@ use std::mem::size_of;
 pub struct EnclaveRaContext {
     pub key_exchange: Option<OneWayAuthenticatedDHKE>,
     pub sp_vkey: VerificationKey,
+    pub signer_key: SigningKey,
 }
 
 impl EnclaveRaContext {
     pub fn init(sp_vkey_pem: &str) -> EnclaveRaResult<Self> {
         let mut rng = Rng::new();
+        let mut signer_rng = Rng::new();
         let key_exchange = OneWayAuthenticatedDHKE::generate_keypair(&mut rng)?;
+        let signer_key = SigningKey::generate_keypair(&mut signer_rng).expect("generate signing key pair failed!");
         Ok(Self {
             sp_vkey: VerificationKey::new(sp_vkey_pem.as_bytes())?,
             key_exchange: Some(key_exchange),
+            signer_key,
         })
     }
 
     pub fn do_attestation(
-        mut self,
+        &mut self,
         mut client_stream: &mut (impl Read + Write),
     ) -> EnclaveRaResult<(MacTag, MacTag)> {
         let (sk, mk) = self.process_msg_2(client_stream).unwrap();
@@ -78,10 +82,14 @@ impl EnclaveRaContext {
         verification_msg.write_all(&msg2.g_b).unwrap();
         verification_msg.write_all(&vk).unwrap();
         let verification_digest = sha256(&verification_msg[..])?;
-
+        //add a ecdsa public key to report data for a sign
+        let signer_public_key = self.signer_key.get_public_key()?;
+        let mut _report_data = [0u8; 64];
+        (&mut _report_data[..(verification_digest.len())]).clone_from_slice(&verification_digest);
+        //signer_public_key.len() ==33, so we need to copy to _report_data at (verification_digest.len()-1)
+        (&mut _report_data[(verification_digest.len()-1)..]).clone_from_slice(&signer_public_key);
         // Obtain Quote
-        let quote = Self::get_quote(&verification_digest[..], client_stream)?;
-
+        let quote = Self::get_quote(&_report_data[..], client_stream)?;
         // Send MAC for msg3 to client
         let msg3 = RaMsg3::new(&mut smk, g_a, None, quote)?;
         client_stream.write_all(&msg3.mac).unwrap();

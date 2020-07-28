@@ -1,11 +1,14 @@
-// mod sp_vkey;
-// use crate::sp_vkey::SP_VKEY_PEM;
-// use byteorder::{NetworkEndian, WriteBytesExt};
-use ra_common::tcp::tcp_accept;
+use crate::error::EnclaveRaError;
 use crate::context::EnclaveRaContext;
 use sgx_crypto::random::Rng;
 use sgx_crypto::tls_psk::server;
-use std::io::Write;
+use sgx_crypto::signature::SigningKey;
+use ra_common::tcp::tcp_accept;
+use mbedtls::ssl::Session;
+use std::net::{TcpStream};
+use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
+use http::{HeaderMap, StatusCode};
 
 pub const SP_VKEY_PEM: &str = "\
 -----BEGIN RSA PUBLIC KEY-----\n
@@ -18,30 +21,45 @@ L7pYuPODmV02by5r+7hgXFQkTADwFQBCmwIDAQAB\n\
 -----END RSA PUBLIC KEY-----\
 \0";
 
-pub fn attestation(client_addr: &str, sp_addr: &str) {
-    // let client_port = 7777;
-    let mut client_stream = tcp_accept(client_addr).expect("Enclave: Client connection failed");
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HttpRespWrap{
+    #[serde(with = "http_serde::header_map")] 
+    pub map: HeaderMap,
+    #[serde(with = "http_serde::status_code")] 
+    pub statu: StatusCode,
+}
+
+pub fn attestation(client:&str, sp:&str, keep_message:fn(Session))->Result<SigningKey, EnclaveRaError>{
+    let mut client_stream = tcp_accept(client).expect("Enclave: Client connection failed");
     eprintln!("Enclave: connected to client.");
-    let context = EnclaveRaContext::init(SP_VKEY_PEM).unwrap();
-    // let (_signing_key, master_key): ([u8;16], [u8;16]) = context.do_attestation(&mut client_stream).unwrap();
-    let (_signing_key, master_key) = context.do_attestation(&mut client_stream).unwrap();
+    let mut encontext = EnclaveRaContext::init(SP_VKEY_PEM).unwrap();
+    let (_signing_key, master_key) = encontext.do_attestation(&mut client_stream).unwrap();
 
     // talk to SP directly from now on
-    // let sp_port = 1235;
-    let mut sp_stream = tcp_accept(sp_addr).expect("Enclave: SP connection failed");
-
+    //let sp_port = 1235;
+    let mut sp_stream = tcp_accept(sp).expect("Enclave: SP connection failed");
     // establish TLS-PSK with SP; enclave is the server
     let mut psk_callback = server::callback(&master_key);
     let mut rng = Rng::new();
     let config = server::config(&mut rng, &mut psk_callback);
     let mut ctx = server::context(&config).unwrap();
-
     // begin secure communication
-    let mut session = ctx.establish(&mut sp_stream, None).unwrap();
-    let msg = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Pellentesque non placerat risus, et lobortis quam. Mauris velit lorem, elementum id neque a, aliquet tempus turpis. Nam eu congue urna, in semper quam. Ut tristique gravida nunc nec feugiat. Proin tincidunt massa a arcu volutpat, sagittis dignissim velit convallis. Cras ac finibus lorem, nec congue felis. Pellentesque fermentum vitae ipsum sed gravida. Nulla consectetur sit amet erat a pellentesque. Donec non velit sem. Sed eu metus felis. Nullam efficitur consequat ante, ut commodo nisi pharetra consequat. Ut accumsan eget ligula laoreet dictum. Maecenas tristique porta convallis. Suspendisse tempor sodales velit, ac luctus urna varius eu. Ut ultrices urna vestibulum vestibulum euismod. Vivamus eu sapien urna.";
-    session
-        .write_u32::<NetworkEndian>(msg.len() as u32)
-        .unwrap();
-    write!(&mut session, "{}", msg).unwrap();
+    let  session = ctx.establish(&mut sp_stream, None).unwrap();
     eprintln!("Enclave: done!");
+    keep_message(session);
+    Ok(encontext.signer_key)
+}
+pub fn attestation_get_report(client:&str, sp:&str, keep_message:fn(TcpStream, &mut HashMap<u8, (Vec<u8>, Vec<u8>)>), report: &mut HashMap<u8, (Vec<u8>, Vec<u8>)> )->Result<SigningKey, EnclaveRaError>{
+    let mut client_stream = tcp_accept(client).expect("Enclave: Client connection failed");
+    eprintln!("Enclave: connected to client.");
+    let mut encontext = EnclaveRaContext::init(SP_VKEY_PEM).unwrap();
+    let (_signing_key, _master_key) = encontext.do_attestation(&mut client_stream).unwrap();
+
+    // talk to SP directly from now on
+    //let sp_port = 1235;
+    println!("wait for connect:");
+    let sp_stream = tcp_accept(sp).expect("Enclave: SP connection failed");
+    println!("wait for connect: done!");
+    keep_message(sp_stream, report);
+    Ok(encontext.signer_key)
 }

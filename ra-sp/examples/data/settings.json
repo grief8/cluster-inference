@@ -9,7 +9,31 @@
         "GROUP_OUT_OF_DATE",
         "CONFIGURATION_NEEDED"
     ],
-    "sp_private_key_pem_path": "examples/data/sp-keys/private_key.pem",
     "ias_root_cert_pem_path": "examples/data/Intel_SGX_Attestation_RootCA.pem",
-    "sigstruct_path": "../ra-enclave/target/x86_64-fortanix-unknown-sgx/debug/examples/tls-enclave.sig"
+    "listener_address": "localhost:1234",
+    "slaves":[{
+        "id":0,
+        "client_ip":"localhost",
+        "enclave_port": "localhost:1310",
+        "sp_private_key_pem_path": "examples/data/sp-keys/private_key.pem",
+        "sigstruct_path": "../part0/target/x86_64-fortanix-unknown-sgx/debug/sgx-part0.sig"
+    },{
+        "id":1,
+        "client_ip":"localhost",
+        "enclave_port": "localhost:1311",
+        "sp_private_key_pem_path": "examples/data/sp-keys/private_key.pem",
+        "sigstruct_path": "../part1/target/x86_64-fortanix-unknown-sgx/debug/sgx-part1.sig"
+    },{
+        "id":2,
+        "client_ip":"localhost",
+        "enclave_port": "localhost:1319",
+        "sp_private_key_pem_path": "examples/data/sp-keys/private_key.pem",
+        "sigstruct_path": "../part2/target/x86_64-fortanix-unknown-sgx/debug/sgx-part2.sig"
+    },{
+        "id":255,
+        "client_ip":"localhost",
+        "enclave_port": "localhost:1319",
+        "sp_private_key_pem_path": "examples/data/sp-keys/private_key.pem",
+        "sigstruct_path": "../scheduler/target/x86_64-fortanix-unknown-sgx/debug/scheduler.sig"
+    }]
 }

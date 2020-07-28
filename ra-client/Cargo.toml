@@ -6,6 +6,7 @@ edition = "2018"
 
 [features]
 verbose = []
+default = ["byteorder"]
 
 [dependencies]
 bincode = "1.2.1"
@@ -13,6 +14,8 @@ aesm-client = "0.2.0"
 sgx-isa = "0.3.1"
 ra-common = { path = "../ra-common" }
 sgx-crypto = { path = "../sgx-crypto" }
+byteorder = { version = "1.3.2", optional = true }
+clap = "2.33.0"
 
 [[example]]
 name = "tls-client"
