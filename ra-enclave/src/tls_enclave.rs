@@ -5,7 +5,8 @@ use sgx_crypto::tls_psk::server;
 use sgx_crypto::signature::SigningKey;
 use ra_common::tcp::tcp_accept;
 use mbedtls::ssl::Session;
-use std::net::TcpStream;
+use std::net::{TcpStream};
+use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use http::{HeaderMap, StatusCode};
 
@@ -48,7 +49,7 @@ pub fn attestation(client:&str, sp:&str, keep_message:fn(Session))->Result<Signi
     keep_message(session);
     Ok(encontext.signer_key)
 }
-pub fn attestation_get_report(client:&str, sp:&str, keep_message:fn(TcpStream))->Result<SigningKey, EnclaveRaError>{
+pub fn attestation_get_report(client:&str, sp:&str, keep_message:fn(TcpStream, &mut HashMap<u8, (Vec<u8>, Vec<u8>)>), report: &mut HashMap<u8, (Vec<u8>, Vec<u8>)> )->Result<SigningKey, EnclaveRaError>{
     let mut client_stream = tcp_accept(client).expect("Enclave: Client connection failed");
     eprintln!("Enclave: connected to client.");
     let mut encontext = EnclaveRaContext::init(SP_VKEY_PEM).unwrap();
@@ -59,6 +60,6 @@ pub fn attestation_get_report(client:&str, sp:&str, keep_message:fn(TcpStream))-
     println!("wait for connect:");
     let sp_stream = tcp_accept(sp).expect("Enclave: SP connection failed");
     println!("wait for connect: done!");
-    keep_message(sp_stream);
+    keep_message(sp_stream, report);
     Ok(encontext.signer_key)
 }

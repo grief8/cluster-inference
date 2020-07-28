@@ -23,7 +23,7 @@ extern crate rand;
 extern crate byteorder;
 extern crate mbedtls;
 
-use byteorder::{NetworkEndian, ReadBytesExt};
+use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
 use std::net::{TcpListener, TcpStream};                                                                                        
 use std::io::{Write, Read};
 use ra_enclave::tls_enclave::{attestation_get_report, HttpRespWrap};
@@ -47,12 +47,13 @@ use std::{
     convert::TryFrom as _,
     io::{Read as _, Write as _},
     time::{SystemTime, UNIX_EPOCH},
+    collections::HashMap,
+    thread,
+    sync::{Arc, Mutex},
 };
 use serde_json::{Result, Value};
 //  use image::{FilterType, GenericImageView};
 use ndarray::{Array, Array4};
-use std::{thread, time};
-use std::sync::{Arc, Mutex};
 mod master;
 use master::{Scheduler, User, Slave};
 fn timestamp() -> i64 {
@@ -75,15 +76,10 @@ fn main() -> std::io::Result<()> {
     let map_table = config.clone();
     let user_queue: Vec<User> = vec![];
     let mut slave_queue: Vec<Slave> = vec![];
-    // for i in 0..config["slave_address"]["resnet18"]["slave"].as_object().unwrap().len(){
-    //     slave_queue.push(Slave{busy_flag: false, slave_ip: config["slave_address"]["resnet18"]["slave"][i.to_string()].as_str().unwrap()})
-    // }
-    // for i in 0..config["slave_address"]["mobilenetv1"]["slave"].as_object().unwrap().len(){
-    //     slave_queue.push(Slave{busy_flag: false, slave_ip: config["slave_address"]["mobilenetv1"]["slave"][i.to_string()].as_str().unwrap()})
-    // }
     let scheduler = Scheduler {map_table: map_table, user_queue, slave_queue }.init(config.clone());
     println!("attestation start");
-    let mut sign_key = attestation_get_report(client_address, sp_address, keep_message).unwrap();
+    let mut report = HashMap::new();
+    let mut sign_key = attestation_get_report(client_address, sp_address, keep_message, &mut report).unwrap();
     {
         let mut rng = Rng::new();
         let message = [0x1,0x2,0x3,0x4,0x5,0x6,0x7];
@@ -96,25 +92,15 @@ fn main() -> std::io::Result<()> {
     println!("attestation end");
 
     let listener = TcpListener::bind(server_address).unwrap();
-
-    let mut mt: Value = serde_json::from_str("{}").unwrap();
-    let mut config: &'static str = include_str!(concat!(env!("PWD"), "/config"));
     let mut scheduler = Arc::new(Mutex::new(scheduler));
-    // let mut queue = Arc::new(Mutex::new(vec![]));
-    // let (tx, rx) = mpsc::channel();
+    let mut report = Arc::new(Mutex::new(report));
     let mut thread_vec: Vec<thread::JoinHandle<()>> = Vec::new();
-    // let serialized = serde_json::to_string(&scheduler).unwrap();
-    // println!("serializeds = {}", serialized);
-    // let mut sy_time = SystemTime::now();
-    // let mut duration: u128 = 1;
     for stream in listener.incoming() {
         let mut stream = stream.unwrap();
         let scheduler = scheduler.clone(); // potential sync errors here
-        // let queue = queue.clone();
-        // let tx = tx.clone();
+        let report = report.clone();
         let handle = thread::spawn( move || {
             let mut scheduler = scheduler.lock().unwrap();
-            // let mut user = User{sub_model: vec![], user_ip: "",model: ""};
             let mut slv_ip: String = "".to_string();
             let mut model = "".to_string();
             let mut entropy = entropy_new();
@@ -166,6 +152,11 @@ fn main() -> std::io::Result<()> {
                     // }
                     // println!("{:?}", uq.len());
                 }
+                else if msg == "attestation" {
+                    let mut report = report.lock().unwrap();
+                    send_report(&mut server_session, &report);
+
+                }
                 else
                 {
                     println!("{:?}", msg);
@@ -185,7 +176,7 @@ fn main() -> std::io::Result<()> {
     // println!("{:?}", duration);
     Ok(())   
 }
-pub fn keep_message(socket: TcpStream){
+pub fn keep_message(socket: TcpStream, report: &mut HashMap<u8, (Vec<u8>, Vec<u8>)>){
     let mut sock = socket;
     loop{
         let id = sock.read_u8().unwrap();
@@ -195,14 +186,15 @@ pub fn keep_message(socket: TcpStream){
         println!("receiced id is: {:?}", id);
         let len  = sock.read_u32::<NetworkEndian>().unwrap() as usize;
         println!("httpresp header len: {:?}", len);
-        let mut header = vec![0u8; len];
-        sock.read_exact(&mut header[..]).unwrap();
-        let header: HttpRespWrap = serde_json::from_slice(&header).unwrap();
+        let mut header_raw = vec![0u8; len];
+        sock.read_exact(&mut header_raw[..]).unwrap();
+        let header: HttpRespWrap = serde_json::from_slice(&header_raw).unwrap();
         let len  = sock.read_u32::<NetworkEndian>().unwrap() as usize;
         let mut body = vec![0u8; len];
         sock.read_exact(&mut body[..]).unwrap();
-        
+        let mut body_raw: Vec<u8> = body.clone();
         let attresp = AttestationResponse::from_response(&header.map, body).unwrap();
+        report.insert(id, (header_raw, body_raw));
         // println!("{:?}", attresp.isv_enclave_quote_body);
         let quote = base64::decode(&attresp.isv_enclave_quote_body).unwrap();
         if cfg!(feature = "verbose") {
@@ -221,4 +213,16 @@ pub fn keep_message(socket: TcpStream){
             println!();
         }      
     }
+}
+
+fn send_report(session: &mut Session, report: & HashMap<u8, (Vec<u8>, Vec<u8>)>) -> Result<()> {
+    let ( header,  body) = report.get(&255).unwrap();
+    let len = header.len() as u32;
+    session.write_u32::<NetworkEndian>(len).unwrap();
+    session.write_all(&header).unwrap();
+    let len = body.len() as u32;
+    session.write_u32::<NetworkEndian>(len).unwrap();
+    session.write_all(&body).unwrap();
+    // session.write_all(buf);
+    Ok(())
 }

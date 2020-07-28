@@ -97,8 +97,7 @@ pub fn keep_message(session:Session){
     eprintln!("SP: done!");
  }
 //send all of the report getting from IAS to schedule for check
-#[tokio::main]
-pub async fn send_http_report_to_schedule(http_report:&mut HashMap<u8, Response<Vec<u8>>>, enclave_port: String){
+pub fn send_http_report_to_schedule(http_report:&mut HashMap<u8, Response<Vec<u8>>>, enclave_port: String){
     let timeout = Duration::from_secs(50);
     println!("{}",enclave_port);
     let mut enclave_stream =

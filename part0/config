@@ -1,5 +1,5 @@
 {
-    "server_address": "127.0.0.1:22000",
+    "server_address": "127.0.0.1:32100",
     "client_address": "127.0.0.1:7710",
     "attestation_address": "127.0.0.1:4240",
     "sp_address": "127.0.0.1:1310",

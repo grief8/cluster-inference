@@ -23,30 +23,27 @@ extern crate ndarray;
 extern crate rand;
 extern crate mbedtls;
 
+use byteorder::{NetworkEndian, ReadBytesExt};
 use std::net::{TcpListener, TcpStream};
-use mbedtls::rng::Rdrand;
-use mbedtls::pk::Pk;
 use mbedtls::rng::CtrDrbg;
 use mbedtls::ssl::config::{Endpoint, Preset, Transport};
 use mbedtls::ssl::{Config, Context, Session};
 use mbedtls::x509::Certificate;
-use mbedtls::Result as TlsResult;
-use std::fmt::Write;
+use serde_json::{Result, Value};
 
 #[path = "../../support/mod.rs"]
 mod support;
 use support::entropy::entropy_new;
 use support::keys;
-use ra_enclave::tls_enclave::attestation;
+use ra_enclave::tls_enclave::{attestation_get_report, HttpRespWrap};
+use ra_enclave::attestation_response::AttestationResponse;
 use rand::Rng;
 use std::{
-    convert::TryFrom as _,
     io::{Read as _, Write as _},
     time::{SystemTime, UNIX_EPOCH},
     slice,
 };
 //  use image::{FilterType, GenericImageView};
-use ndarray::{Array, Array4};
 
 fn timestamp() -> i64 {
 let start = SystemTime::now();
@@ -67,8 +64,7 @@ fn gen_input_data(shape: (i32, i32, i32, i32)) -> Vec<f32>{
     ran
 }
 
-fn launch_slave_session(address: &str, key: &str, data: &mut [u8]){
-    
+fn launch_slave_session(address: &str, pub_key: &str, data: &mut [u8]){
     println!("connecting to {:#?}", address);
     let mut socket = TcpStream::connect(address).unwrap();
     let mut entropy = entropy_new();
@@ -86,15 +82,12 @@ fn launch_slave_session(address: &str, key: &str, data: &mut [u8]){
 }
 fn main() {
     let config = include_str!(concat!(env!("PWD"), "/config"));
-    let config = config.split("\n");
-    let config: Vec<&str> = config.collect(); 
-    let server_address = config[2];
-    let client_address = config[3];
-    let attestation_port = config[4];
+    let config: Value = serde_json::from_str(config).unwrap();
+    let client_address = config["client_address"].as_str().unwrap();
 
-    println!("attestation start");
+    // println!("attestation start");
     // attestation(attestation_port.to_string().parse::<u16>().unwrap(), );
-    println!("attestation end");
+    // println!("attestation end");
 
     let flag = match client_address{
         "None" => false,
@@ -115,6 +108,8 @@ fn main() {
     config.set_ca_list(Some(&mut *cert), None);
     let mut ctx = Context::new(&config).unwrap();
     let mut client_session = ctx.establish(&mut socket, None).unwrap();
+    client_session.write("attestation".as_bytes());
+    let quote = verify_report(&mut client_session).unwrap();
     client_session.write("resnet18,127.0.0.1".as_bytes());
     loop{
         let mut array: [u8; 256] = [0; 256];
@@ -140,14 +135,34 @@ fn main() {
             println!("message: {:?}", message);
             launch_slave_session(message[1], message[2], user_data);
             client_session.write("resnet18,127.0.0.1".as_bytes());
-            // println!("Result: {:#?}", user_data);
         }
     }
  }
  
-  pub fn keep_message(sess:Session){
-    let mut session = sess;
-    // let msg = "enclave macro!";
-    // session.write_u32::<NetworkEndian>(msg.len() as u32).unwrap();
-    // write!(&mut session, "{}", msg).unwrap();
- }
+pub fn verify_report(sock: &mut Session) -> Result<Vec<u8>>{
+    let len  = sock.read_u32::<NetworkEndian>().unwrap() as usize;
+    let mut header = vec![0u8; len];
+    sock.read_exact(&mut header[..]).unwrap();
+    let header: HttpRespWrap = serde_json::from_slice(&header).unwrap();
+    let len  = sock.read_u32::<NetworkEndian>().unwrap() as usize;
+    let mut body = vec![0u8; len];
+    sock.read_exact(&mut body[..]).unwrap();
+    let attresp = AttestationResponse::from_response(&header.map, body).unwrap();
+    let quote = base64::decode(&attresp.isv_enclave_quote_body).unwrap();
+    if cfg!(feature = "verbose") {
+        println!("\nmr enclave value:");
+        for i in &quote[112..144]{
+            print!("0x{:>0width$x?}, ", i,width=2);   
+        }
+        println!("\nmr signer value:");
+        for i in &quote[176..208]{
+            print!("0x{:>0width$x?}, ", i,width=2);   
+        }
+        println!("\nsigner public key:");
+        for i in &quote[399..432]{
+            print!("0x{:>0width$x?}, ", i,width=2);   
+        }
+        println!();
+    }
+    Ok(quote)  
+}

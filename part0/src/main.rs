@@ -44,6 +44,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
     thread,
 };
+use serde_json::{Result, Value};
 //use ndarray::{Array, Array4};
 
 fn timestamp() -> i64 {
@@ -85,9 +86,8 @@ pub fn keep_message(session:Session){
 
 pub fn do_tvm(){
     let config = include_str!(concat!(env!("PWD"), "/config"));
-    let config = config.split("\n");
-    let config: Vec<&str> = config.collect(); 
-    let server_address = config[2];
+    let config: Value = serde_json::from_str(config).unwrap();
+    let server_address = config["server_address"].as_str().unwrap();
     //let client_address = config[3];
     let syslib = tvm_runtime::SystemLibModule::default();
     let graph_json = include_str!(concat!(env!("OUT_DIR"), "/graph.json"));
@@ -97,8 +97,8 @@ pub fn do_tvm(){
     let graph = tvm_runtime::Graph::try_from(graph_json).unwrap();
     let mut exec = tvm_runtime::GraphExecutor::new(graph, &syslib).unwrap();
     exec.load_params(params);
-
     let listener = TcpListener::bind(server_address).unwrap();
+    println!("addr: {}", server_address);
     for stream in listener.incoming() {
         let mut stream = stream.unwrap();
         let mut entropy = entropy_new();
