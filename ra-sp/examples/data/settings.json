@@ -26,9 +26,21 @@
     },{
         "id":2,
         "client_ip":"localhost",
-        "enclave_port": "localhost:1319",
+        "enclave_port": "localhost:1312",
         "sp_private_key_pem_path": "examples/data/sp-keys/private_key.pem",
         "sigstruct_path": "../part2/target/x86_64-fortanix-unknown-sgx/debug/sgx-part2.sig"
+    },{
+        "id":3,
+        "client_ip":"localhost",
+        "enclave_port": "localhost:1313",
+        "sp_private_key_pem_path": "examples/data/sp-keys/private_key.pem",
+        "sigstruct_path": "../part3/target/x86_64-fortanix-unknown-sgx/debug/sgx-part3.sig"
+    },{
+        "id":4,
+        "client_ip":"localhost",
+        "enclave_port": "localhost:1314",
+        "sp_private_key_pem_path": "examples/data/sp-keys/private_key.pem",
+        "sigstruct_path": "../part4/target/x86_64-fortanix-unknown-sgx/debug/sgx-part4.sig"
     },{
         "id":255,
         "client_ip":"localhost",

@@ -21,6 +21,7 @@
 
 import os
 from os import path as osp
+import json
 import shutil
 import sys
 
@@ -34,7 +35,7 @@ def main():
     if not osp.isdir(build_dir):
         os.makedirs(build_dir, exist_ok=True)
     with open(osp.join(os.getcwd(), 'config'), 'r') as f:
-        config = f.readline().strip('\n')
+        config = json.load(f)["model_path"]
     shutil.copyfile(osp.join(config, 'model.o'), osp.join(build_dir, 'model.o'))
     shutil.copyfile(osp.join(config, 'graph.json'), osp.join(build_dir, 'graph.json'))
     shutil.copyfile(osp.join(config, 'params.bin'), osp.join(build_dir, 'params.bin'))

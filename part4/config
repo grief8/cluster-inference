@@ -1,5 +1,9 @@
-/home/lifabing/sgx/best-partion/model/part4
-1,1024,7,7
-127.0.0.1:4246
-None
-32104
+{
+    "server_address": "127.0.0.1:32104",
+    "client_address": "127.0.0.1:7714",
+    "attestation_address": "127.0.0.1:4244",
+    "sp_address": "127.0.0.1:1314",
+    "model": ["resnet18", "mobilenetv1"],
+    "model_path": "/home/lifabing/sgx/best-partion/model/part4",
+    "input_size": [1,3,224,224]
+}

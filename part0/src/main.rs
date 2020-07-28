@@ -60,7 +60,11 @@ fn main() {
     let mut thread_vec = vec![];
     let handle = thread::spawn(move ||{
         println!("attestation start");
-        let mut sign_key = attestation("127.0.0.1:7710","127.0.0.1:1310",keep_message).unwrap();
+        let config = include_str!(concat!(env!("PWD"), "/config"));
+        let config: Value = serde_json::from_str(config).unwrap();
+        let client_address = config["client_address"].as_str().unwrap();
+        let sp_address = config["sp_address"].as_str().unwrap();
+        let mut sign_key = attestation(client_address, sp_address, keep_message).unwrap();
         println!("attestation end");
     });
     thread_vec.push(handle);

@@ -32,20 +32,19 @@ use mbedtls::rng::CtrDrbg;
 use mbedtls::ssl::config::{Endpoint, Preset, Transport};
 use mbedtls::ssl::{Config, Context, Session};
 use mbedtls::x509::Certificate;
-use std::thread;
 
 #[path = "../../support/mod.rs"]
 mod support;
 use support::entropy::entropy_new;
 use support::keys;
-//use ra_enclave::tls_enclave;
 
 use std::{
     convert::TryFrom as _,
     io::{Read as _, Write as _},
     time::{SystemTime, UNIX_EPOCH},
+    thread,
 };
-//  use image::{FilterType, GenericImageView};
+use serde_json::{Result, Value};
 //use ndarray::{Array, Array4};
 
 fn timestamp() -> i64 {
@@ -61,8 +60,11 @@ fn main() {
     let mut thread_vec = vec![];
     let handle = thread::spawn(move ||{
         println!("attestation start");
-        //attestation!{7777,1235};
-        let mut sign_key = attestation("127.0.0.1:7710","127.0.0.1:1310",keep_message).unwrap();
+        let config = include_str!(concat!(env!("PWD"), "/config"));
+        let config: Value = serde_json::from_str(config).unwrap();
+        let client_address = config["client_address"].as_str().unwrap();
+        let sp_address = config["sp_address"].as_str().unwrap();
+        let mut sign_key = attestation(client_address, sp_address, keep_message).unwrap();
         println!("attestation end");
     });
     thread_vec.push(handle);
@@ -88,9 +90,8 @@ pub fn keep_message(session:Session){
 
 pub fn do_tvm(){
     let config = include_str!(concat!(env!("PWD"), "/config"));
-    let config = config.split("\n");
-    let config: Vec<&str> = config.collect(); 
-    let server_address = config[2];
+    let config: Value = serde_json::from_str(config).unwrap();
+    let server_address = config["server_address"].as_str().unwrap();
     //let client_address = config[3];
     let syslib = tvm_runtime::SystemLibModule::default();
     let graph_json = include_str!(concat!(env!("OUT_DIR"), "/graph.json"));
@@ -100,8 +101,8 @@ pub fn do_tvm(){
     let graph = tvm_runtime::Graph::try_from(graph_json).unwrap();
     let mut exec = tvm_runtime::GraphExecutor::new(graph, &syslib).unwrap();
     exec.load_params(params);
-
     let listener = TcpListener::bind(server_address).unwrap();
+    println!("addr: {}", server_address);
     for stream in listener.incoming() {
         let mut stream = stream.unwrap();
         let mut entropy = entropy_new();
