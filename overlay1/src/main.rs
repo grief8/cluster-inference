@@ -99,6 +99,8 @@ fn main() {
         slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, data.len() * 4)
     };
     println!("connecting to scheduler {:?}", client_address);
+    let ts1 = timestamp();
+    println!("scheduler TimeStamp: {}", ts1);
     let mut socket = TcpStream::connect(client_address).unwrap();
     let mut entropy = entropy_new();
     let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
@@ -120,7 +122,7 @@ fn main() {
             Ok(v) => v,
             Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
         };
-        println!("msg: {:?}", msg);
+        // println!("msg: {:?}", msg);
         if msg.ends_with('\n') {
             msg = msg.strip_suffix('\n').unwrap().to_string();
         }
@@ -132,7 +134,9 @@ fn main() {
         }
         else {
             let message:Vec<&str> = msg.split(",").collect();
-            println!("message: {:?}", message);
+            // println!("message: {:?}", message);
+            let ts1 = timestamp();
+            println!("slave TimeStamp: {}", ts1);
             launch_slave_session(message[1], message[2], user_data);
             client_session.write("resnet18,127.0.0.1".as_bytes());
         }
@@ -149,20 +153,20 @@ pub fn verify_report(sock: &mut Session) -> Result<Vec<u8>>{
     sock.read_exact(&mut body[..]).unwrap();
     let attresp = AttestationResponse::from_response(&header.map, body).unwrap();
     let quote = base64::decode(&attresp.isv_enclave_quote_body).unwrap();
-    if cfg!(feature = "verbose") {
-        println!("\nmr enclave value:");
-        for i in &quote[112..144]{
-            print!("0x{:>0width$x?}, ", i,width=2);   
-        }
-        println!("\nmr signer value:");
-        for i in &quote[176..208]{
-            print!("0x{:>0width$x?}, ", i,width=2);   
-        }
-        println!("\nsigner public key:");
-        for i in &quote[399..432]{
-            print!("0x{:>0width$x?}, ", i,width=2);   
-        }
-        println!();
-    }
+    // if cfg!(feature = "verbose") {
+    //     println!("\nmr enclave value:");
+    //     for i in &quote[112..144]{
+    //         print!("0x{:>0width$x?}, ", i,width=2);   
+    //     }
+    //     println!("\nmr signer value:");
+    //     for i in &quote[176..208]{
+    //         print!("0x{:>0width$x?}, ", i,width=2);   
+    //     }
+    //     println!("\nsigner public key:");
+    //     for i in &quote[399..432]{
+    //         print!("0x{:>0width$x?}, ", i,width=2);   
+    //     }
+    //     println!();
+    // }
     Ok(quote)  
 }

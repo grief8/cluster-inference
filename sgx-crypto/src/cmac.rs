@@ -25,6 +25,24 @@ impl Cmac {
         Ok(tag)
     }
 
+    pub fn sign_len(&mut self, data: &mut [u8], len: usize) -> super::Result<Vec<u8>> {
+        let mut tag = [0u8; MAC_LEN];
+        let cmac_len = MAC_LEN as usize;
+        let mut result = Vec::new();
+        let rang = len/cmac_len;
+        for _i in 0..rang {
+            self.inner.cmac(self.key.as_ref(), data, tag.as_mut())?;
+            result.extend_from_slice(&tag);
+            self.key[..].clone_from_slice(&tag);
+        }
+        let fi = len % cmac_len;
+        if fi !=0{
+            self.inner.cmac(self.key.as_ref(), data, tag.as_mut())?;
+            result.extend_from_slice(&tag[0..fi]);
+        }       
+        Ok(result)
+    }
+
     pub fn verify(&mut self, data: &[u8], tag: &MacTag) -> super::Result<()> {
         let ref_tag = self.sign(data)?;
         match &ref_tag == tag {

@@ -25,11 +25,13 @@ extern crate mbedtls;
 
 use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
 use std::net::{TcpListener, TcpStream};                                                                                        
-use std::io::{Write, Read};
+// use std::io::{Write, Read};
 use ra_enclave::tls_enclave::{attestation_get_report, HttpRespWrap};
 use ra_enclave::attestation_response::AttestationResponse;
 use sgx_crypto::signature::{VerificationKey};
+use sgx_crypto::key_exchange::DHKE;
 use sgx_crypto::random::Rng;
+use sgx_crypto::aes_gcm::AESGCM;
 use mbedtls::rng::CtrDrbg;
 use mbedtls::pk::Pk;
 use mbedtls::ssl::config::{Endpoint, Preset, Transport};
@@ -52,10 +54,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 use serde_json::{Result, Value};
-//  use image::{FilterType, GenericImageView};
+
 use ndarray::{Array, Array4};
 mod master;
 use master::{Scheduler, User, Slave};
+
+const STOP_LABEL: u8 = 250;
 fn timestamp() -> i64 {
     let start = SystemTime::now();
     let since_the_epoch = start
@@ -180,7 +184,7 @@ pub fn keep_message(socket: TcpStream, report: &mut HashMap<u8, (Vec<u8>, Vec<u8
     let mut sock = socket;
     loop{
         let id = sock.read_u8().unwrap();
-        if id == 250u8{
+        if id == STOP_LABEL {
             break;
         }
         println!("receiced id is: {:?}", id);

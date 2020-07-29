@@ -116,7 +116,7 @@ pub fn do_tvm(){
         let mut server_session = ctx.establish(&mut stream, None).unwrap();
         println!("server_session connect!");
         if let Err(_) =
-            server_session.read(exec.get_input("input").unwrap().data().view().as_mut_slice())
+            server_session.read(exec.get_input("data").unwrap().data().view().as_mut_slice())
         {
             continue;
         }

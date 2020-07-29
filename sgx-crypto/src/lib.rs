@@ -1,5 +1,6 @@
 pub mod certificate;
 pub mod cmac;
+pub mod aes_gcm;
 pub mod digest;
 pub mod error;
 pub mod key_exchange;

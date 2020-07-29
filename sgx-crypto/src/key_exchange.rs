@@ -47,6 +47,28 @@ impl DHKE {
         let out = kdf.sign(&ikm[..])?;
         Ok(out)
     }
+        /// diff from derive_key, this method can generate any len key for neccessry
+        pub fn derive_key_len(
+            mut self,
+            peer_public_key: &DHKEPublicKey,
+            rng: &mut Rng,
+            key_len: usize,
+        ) -> super::Result<Vec<u8>> {
+            let mut ikm = vec![0; SECRET_SHARE_LEN];
+            let ecgroup = self.inner.ec_group()?;
+            let peer_public_key = Pk::public_from_ec_components(
+                ecgroup.clone(),
+                EcPoint::from_binary(&ecgroup, &peer_public_key[..])?,
+            )?;
+            let len = self
+                .inner
+                .agree(&peer_public_key, &mut ikm[..], &mut rng.inner)?;
+            assert_eq!(len, SECRET_SHARE_LEN);
+            let cmac_key = [0u8; MAC_LEN];
+            let mut kdf = Cmac::new(&cmac_key[..])?;
+            let out = kdf.sign_len(&mut ikm[..], key_len)?;
+            Ok(out)
+        }
 }
 
 /// One-way authenticated DHKE. Alice (g_a) verifies and Bob (g_b) signs.
