@@ -126,6 +126,7 @@ pub fn do_tvm(){
         exec.run();
         let duration = SystemTime::now().duration_since(sy_time).unwrap().as_micros();
         server_session.write(exec.get_output(0).unwrap().data().as_slice()).unwrap();
+        println!("output len: {:?}", exec.get_output(0).unwrap().data().as_slice().len());
         println!("{:?}", duration);
         //only try once
         break;

@@ -75,7 +75,6 @@ fn launch_slave_session(address: &str, pub_key: &str, data: &mut [u8]){
     config.set_ca_list(Some(&mut *cert), None);
     let mut ctx = Context::new(&config).unwrap();
     let mut client_session = ctx.establish(&mut socket, None).unwrap();
-    println!("connecting to {:#?}", address);
     client_session.write(data);
     client_session.read(data).unwrap();
 
@@ -99,8 +98,8 @@ fn main() {
         slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, data.len() * 4)
     };
     println!("connecting to scheduler {:?}", client_address);
-    let ts1 = timestamp();
-    println!("scheduler TimeStamp: {}", ts1);
+    // let ts1 = timestamp();
+    // println!("scheduler TimeStamp: {}", ts1);
     let mut socket = TcpStream::connect(client_address).unwrap();
     let mut entropy = entropy_new();
     let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
@@ -110,8 +109,11 @@ fn main() {
     config.set_ca_list(Some(&mut *cert), None);
     let mut ctx = Context::new(&config).unwrap();
     let mut client_session = ctx.establish(&mut socket, None).unwrap();
+    let mut sy_time = SystemTime::now();
     client_session.write("attestation".as_bytes());
     let quote = verify_report(&mut client_session).unwrap();
+    println!("attestation {:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
+    sy_time = SystemTime::now();
     client_session.write("resnet18,127.0.0.1".as_bytes());
     loop{
         let mut array: [u8; 256] = [0; 256];
@@ -123,21 +125,25 @@ fn main() {
             Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
         };
         // println!("msg: {:?}", msg);
+        println!("schedule {:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
+        sy_time = SystemTime::now();
         if msg.ends_with('\n') {
             msg = msg.strip_suffix('\n').unwrap().to_string();
         }
         if msg.starts_with("finished"){
             let message:Vec<&str> = msg.split(",").collect();
             launch_slave_session(message[1], message[2], user_data);
-            // println!("{:#?}", result);
+            println!("user_data: {:?}", user_data.len());
+            // println!("{:#?}", user_data);
             break;
         }
         else {
             let message:Vec<&str> = msg.split(",").collect();
             // println!("message: {:?}", message);
-            let ts1 = timestamp();
-            println!("slave TimeStamp: {}", ts1);
+            // let ts1 = timestamp();
+            // println!("slave TimeStamp: {}", ts1);
             launch_slave_session(message[1], message[2], user_data);
+            println!("user_data: {:?}", user_data.len());
             client_session.write("resnet18,127.0.0.1".as_bytes());
         }
     }
