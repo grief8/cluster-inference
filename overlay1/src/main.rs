@@ -23,7 +23,13 @@ extern crate ndarray;
 extern crate rand;
 extern crate mbedtls;
 
-use byteorder::{NetworkEndian, ReadBytesExt};
+use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
+use sgx_crypto::{
+    key_exchange::DHKE,
+    tls_psk::client,
+    aes_gcm::AESGCM,
+    random::Rng,
+};
 use std::net::{TcpListener, TcpStream};
 use mbedtls::rng::CtrDrbg;
 use mbedtls::ssl::config::{Endpoint, Preset, Transport};
@@ -37,7 +43,7 @@ use support::entropy::entropy_new;
 use support::keys;
 use ra_enclave::tls_enclave::{attestation_get_report, HttpRespWrap};
 use ra_enclave::attestation_response::AttestationResponse;
-use rand::Rng;
+use rand::Rng as data_rng;
 use std::{
     io::{Read as _, Write as _},
     time::{SystemTime, UNIX_EPOCH},
@@ -46,12 +52,12 @@ use std::{
 //  use image::{FilterType, GenericImageView};
 
 fn timestamp() -> i64 {
-let start = SystemTime::now();
-let since_the_epoch = start
-    .duration_since(UNIX_EPOCH)
-    .expect("Time went backwards");
-let ms = since_the_epoch.as_secs() as i64 * 1000i64 + (since_the_epoch.subsec_nanos() as f64 / 1_000_000.0) as i64;
-ms
+    let start = SystemTime::now();
+    let since_the_epoch = start
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards");
+    let ms = since_the_epoch.as_secs() as i64 * 1000i64 + (since_the_epoch.subsec_nanos() as f64 / 1_000_000.0) as i64;
+    ms
 }
 
 fn gen_input_data(shape: (i32, i32, i32, i32)) -> Vec<f32>{
@@ -60,25 +66,44 @@ fn gen_input_data(shape: (i32, i32, i32, i32)) -> Vec<f32>{
     for _i in 0..shape.0*shape.1*shape.2*shape.3{
         ran.push(rng.gen::<f32>()*256.);
     }
-    // let data = Array::from_shape_vec(shape, ran).unwrap();
     ran
 }
 
-fn launch_slave_session(address: &str, pub_key: &str, data: &mut [u8]){
+fn launch_slave_session(address: &str, pub_key: &str, message: &mut [u8]) -> Vec<u8>{
     println!("connecting to {:#?}", address);
-    let mut socket = TcpStream::connect(address).unwrap();
-    let mut entropy = entropy_new();
-    let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
-    let mut cert = Certificate::from_pem(keys::PEM_CERT).unwrap();
-    let mut config = Config::new(Endpoint::Client, Transport::Stream, Preset::Default);
-    config.set_rng(Some(&mut rng));
-    config.set_ca_list(Some(&mut *cert), None);
-    let mut ctx = Context::new(&config).unwrap();
-    let mut client_session = ctx.establish(&mut socket, None).unwrap();
-    println!("connecting to {:#?}", address);
-    client_session.write(data);
-    client_session.read(data).unwrap();
+    let mut enclave_stream = TcpStream::connect(address).unwrap();
+    let mut rng = Rng::new();
+    let dh_key = DHKE::generate_keypair(&mut rng).expect("generate ecdh key pair failed!");
+    let dh_public = dh_key.get_public_key().expect("get ecdh public key failed!");
+    let len = dh_public.len() as u32;
+    enclave_stream.write_u32::<NetworkEndian>(len).unwrap();
+    enclave_stream.write_all(&dh_public).unwrap();
+    let len  = enclave_stream.read_u32::<NetworkEndian>().unwrap() as usize;
+    // println!("read ga len: {:?}", len);
+    let mut g_a = vec![0u8; len];
+    enclave_stream.read_exact(&mut g_a[..]).unwrap();
+    let aes_key = dh_key.derive_key_len(&g_a,&mut rng, 32 as usize).expect("derive aes key!");
+    // println!("aes_key:{:?}",&aes_key);
+    // println!("aes_key len:{:?}",aes_key.len() as u32);
+    let mut aes_ctx=AESGCM::new_with_key(&aes_key, aes_key.len() as u32).expect("new_with_key");
+    let mut cipher = vec![0u8;message.len()];
+    let mut tag = [0u8;12];
+    // println!("start encrypt");
+    let len = aes_ctx.encrypt(message, &mut cipher[..], &mut tag[..]).expect("aes gcm encrypt");
+    cipher.truncate(len);
+    enclave_stream.write_u32::<NetworkEndian>(len as u32 +12).unwrap();
+    cipher.extend_from_slice(&tag);
+    enclave_stream.write_all(&cipher);
 
+    let len  = enclave_stream.read_u32::<NetworkEndian>().unwrap() as usize;
+    let mut msg = vec![0u8;len];
+    enclave_stream.read_exact(&mut msg[..]);
+    let mut tag = msg.get(len-12..len).unwrap().to_vec();
+    let mut msg = msg.get(0..len-12).unwrap();
+    let mut plain = vec![0u8;msg.len()];
+
+    aes_ctx.decrypt(&msg, &mut plain, &mut tag[..]).expect("aes gcm decrypt");
+    plain
 }
 fn main() {
     let config = include_str!(concat!(env!("PWD"), "/config"));
@@ -95,12 +120,10 @@ fn main() {
     };
     
     let mut data= gen_input_data((1, 3, 224, 224));
-    let mut user_data = unsafe{
-        slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, data.len() * 4)
+    let mut usr_data = unsafe{
+        slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, data.len() * 4).to_vec()
     };
     println!("connecting to scheduler {:?}", client_address);
-    let ts1 = timestamp();
-    println!("scheduler TimeStamp: {}", ts1);
     let mut socket = TcpStream::connect(client_address).unwrap();
     let mut entropy = entropy_new();
     let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
@@ -110,9 +133,15 @@ fn main() {
     config.set_ca_list(Some(&mut *cert), None);
     let mut ctx = Context::new(&config).unwrap();
     let mut client_session = ctx.establish(&mut socket, None).unwrap();
+
+    let sy_time = SystemTime::now();
     client_session.write("attestation".as_bytes());
     let quote = verify_report(&mut client_session).unwrap();
+    println!("attestation time: {:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
+
+    let mut sy_time = SystemTime::now();
     client_session.write("resnet18,127.0.0.1".as_bytes());
+    // let usr_data = Vec:new();
     loop{
         let mut array: [u8; 256] = [0; 256];
         client_session.read(&mut array).unwrap();
@@ -123,24 +152,32 @@ fn main() {
             Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
         };
         // println!("msg: {:?}", msg);
+        println!("schedule time: {:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
+        sy_time = SystemTime::now();
         if msg.ends_with('\n') {
             msg = msg.strip_suffix('\n').unwrap().to_string();
         }
         if msg.starts_with("finished"){
             let message:Vec<&str> = msg.split(",").collect();
-            launch_slave_session(message[1], message[2], user_data);
-            // println!("{:#?}", result);
+            let mut data = launch_slave_session(message[1], message[2], &mut usr_data);
+            // usr_data.clear();
+            // usr_data.append(&mut data);
+            println!("result: {:#?}", data);
             break;
         }
         else {
             let message:Vec<&str> = msg.split(",").collect();
             // println!("message: {:?}", message);
-            let ts1 = timestamp();
-            println!("slave TimeStamp: {}", ts1);
-            launch_slave_session(message[1], message[2], user_data);
+            // let ts1 = timestamp();
+            // println!("slave TimeStamp: {}", ts1);
+            let mut data = launch_slave_session(message[1], message[2],&mut usr_data);
+            usr_data.clear();
+            usr_data.append(&mut data);
+            println!("usr_data.len: {}", usr_data.len());
             client_session.write("resnet18,127.0.0.1".as_bytes());
         }
     }
+    println!("total time: {:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
  }
  
 pub fn verify_report(sock: &mut Session) -> Result<Vec<u8>>{

@@ -24,8 +24,13 @@ extern crate byteorder;
 extern crate mbedtls;
 
 use std::net::TcpListener;
-use byteorder::{NetworkEndian, WriteBytesExt};                                                                                              
-//use std::io::Write;
+use byteorder::{NetworkEndian, WriteBytesExt, ReadBytesExt};                                                                                              
+use sgx_crypto::{
+    key_exchange::DHKE,
+    tls_psk::client,
+    aes_gcm::AESGCM,
+    random::Rng,
+};
 use ra_enclave::tls_enclave::attestation;
 use mbedtls::pk::Pk;
 use mbedtls::rng::CtrDrbg;
@@ -104,28 +109,45 @@ pub fn do_tvm(){
     let listener = TcpListener::bind(server_address).unwrap();
     println!("addr: {}", server_address);
     for stream in listener.incoming() {
-        let mut stream = stream.unwrap();
-        let mut entropy = entropy_new();
-        let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
-        let mut cert = Certificate::from_pem(keys::PEM_CERT).unwrap();
-        let mut key = Pk::from_private_key(keys::PEM_KEY, None).unwrap();
-        let mut config = Config::new(Endpoint::Server, Transport::Stream, Preset::Default);
-        config.set_rng(Some(&mut rng));
-        config.push_cert(&mut *cert, &mut key).unwrap();
-        let mut ctx = Context::new(&config).unwrap();
-        let mut server_session = ctx.establish(&mut stream, None).unwrap();
         println!("server_session connect!");
-        if let Err(_) =
-            server_session.read(exec.get_input("input").unwrap().data().view().as_mut_slice())
-        {
-            continue;
-        }
+        let mut server_session = stream.unwrap();
+        let mut rng = Rng::new();
+        let dh_key = DHKE::generate_keypair(&mut rng).expect("generate ecdh key pair failed!");
+        let dh_public = dh_key.get_public_key().expect("get ecdh public key failed!");
+        let len  = server_session.read_u32::<NetworkEndian>().unwrap() as usize;
+        println!("read ecdh g_b: {:?}", len);
+        let mut g_b = vec![0u8; len];
+        server_session.read_exact(&mut g_b[..]).unwrap();
+        let len = dh_public.len() as u32;
+        server_session.write_u32::<NetworkEndian>(len).unwrap();
+        server_session.write_all(&dh_public).unwrap();
+        let aes_key = dh_key.derive_key_len(&mut g_b,&mut rng, 32 as usize).expect("derive aes key!");
+        let len  = server_session.read_u32::<NetworkEndian>().unwrap() as usize;
+        let mut message = vec![0u8; len];
+        server_session.read_exact(&mut message[..]).unwrap();
+        let mut tag = message.get(len-12..len).unwrap().to_vec();
+        let mut message = message.get(0..len-12).unwrap();
+        let mut plain = vec![0u8;message.len()];
+        let mut aes_ctx=AESGCM::new_with_key(&aes_key, aes_key.len() as u32).expect("new_with_key");
+        aes_ctx.decrypt(&message, &mut plain[..], &mut tag).expect("aes gcm decrypt");
+        println!("input len: {}", plain.len());
+        exec.get_input("input").unwrap().data().view().as_mut_slice()[..].clone_from_slice(&plain);
         let ts1 = timestamp();
         println!("TimeStamp: {}", ts1);
         let sy_time = SystemTime::now();
         exec.run();
         let duration = SystemTime::now().duration_since(sy_time).unwrap().as_micros();
-        server_session.write(exec.get_output(0).unwrap().data().as_slice()).unwrap();
+        let mut plain = exec.get_output(0).unwrap().data().as_slice();
+        println!("output len: {}", plain.len());
+        let mut cipher = vec![0u8;plain.len()];
+        let mut tag = [0u8;12];
+        println!("start encrypt");
+        let len = aes_ctx.encrypt(plain, &mut cipher[..], &mut tag[..]).expect("aes gcm encrypt");
+        cipher.truncate(len);
+        server_session.write_u32::<NetworkEndian>(len as u32 +12).unwrap();
+        cipher.extend_from_slice(&tag);
+        println!("start write_all");
+        server_session.write_all(&cipher);
         println!("{:?}", duration);
         //only try once
         break;
