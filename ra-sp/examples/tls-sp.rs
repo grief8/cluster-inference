@@ -6,7 +6,8 @@ use sgx_crypto::key_exchange::DHKE;
 use sgx_crypto::tls_psk::client;
 use sgx_crypto::aes_gcm::AESGCM;
 use std::io::{Read, Write};
-use std::mem;
+use std::{mem, thread};
+use std::sync::{Mutex, Arc};
 use std::time::Duration;
 use mbedtls::ssl::Session;
 use std::net::{TcpListener, TcpStream};
@@ -22,7 +23,7 @@ fn parse_config_file(path: &str) -> SpConfigs {
 fn main() {
     let configs = parse_config_file("examples/data/settings.json");
     let listener_address = configs.listener_address.clone();
-    let mut http_report = HashMap::new();
+    let http_report =  Arc::new(Mutex::new(HashMap::new()));
     let listener = TcpListener::bind(listener_address).unwrap();
     //listener.set_nonblocking(true).expect("Cannot set non-blocking");
     eprintln!("SP: starting to listen client.");
@@ -40,33 +41,37 @@ fn main() {
                     Err(e) => {
                         eprintln!("client err, ip:{}", stream.peer_addr().unwrap());
                         eprintln!("the client socket is not configed in settings.json: {}", e);
-                        continue;
+                        return;
                     },
                     Ok(config) =>config
                 };
-                let mut entropy = entropy_new();
-                let enclave_port = spconfig.enclave_port.clone();
-                let mut context = SpRaContext::init(spconfig, &mut entropy).unwrap();
-                let result = match context.do_attestation(&mut stream){
-                    Ok(result)=>{
-                        let mut  http_resp = mem::replace(&mut context.get_ias_client().http_resp, None).unwrap();
-                        http_report.insert(context.get_spconfig().enclave_id, http_resp);
-                        println!("enclave_id: {}", context.get_spconfig().enclave_id);
-                        result
-                    },
-                    Err(e)=>{
-                        println!("Do remote attestation failed, the reason is: {}", e);
-                        continue;
+                let http_report = Arc::clone(&http_report);
+                thread::spawn(move||{
+                    
+                    let mut entropy = entropy_new();
+                    let enclave_port = spconfig.enclave_port.clone();
+                    let mut context = SpRaContext::init(spconfig, &mut entropy).unwrap();
+                    let result = match context.do_attestation(&mut stream){
+                        Ok(result)=>{
+                            let http_resp = mem::replace(&mut context.get_ias_client().http_resp, None).unwrap();
+                            http_report.lock().unwrap().insert(context.get_spconfig().enclave_id, http_resp);
+                            println!("enclave_id: {}", context.get_spconfig().enclave_id);
+                            result
+                        },
+                        Err(e)=>{
+                            println!("Do remote attestation failed, the reason is: {}", e);
+                            return;
+                        }
+                    };
+                    if context.get_spconfig().enclave_id == SCHEDULE_ID{
+                        send_http_report_to_schedule(&mut http_report.lock().unwrap(), enclave_port);
+                        return;
+                    }else {
+                        // establish TLS-PSK with enclave; SP is the client
+                        do_tls_psk(result, enclave_port, keep_message);
                     }
-                };
-                if context.get_spconfig().enclave_id == SCHEDULE_ID{
-                    send_http_report_to_schedule(&mut http_report, enclave_port);
-                    continue;
-                }else {
-                    // establish TLS-PSK with enclave; SP is the client
-                    do_tls_psk(result, enclave_port, keep_message);
-                }
-                
+                });
+                // thread_vec.push(handle);
             }
         }
     }

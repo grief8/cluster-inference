@@ -140,16 +140,23 @@ fn main() -> std::io::Result<()> {
                     model = msg.to_string();
                     scheduler.add_user(model.clone());
                     let ip = scheduler.apply4slave(model, slv_ip.clone());
-                    if ip.starts_with(','){
-                        slv_ip = ip.clone().strip_prefix(',').unwrap().to_string();
-                    }
-                    else{
-                        let m = ip.clone();
-                        let m: Vec<&str> = m.split(',').collect();
-                        slv_ip = m[1].to_string();
-                    }
-                    server_session.write(format!("{},{}",ip,"key").as_bytes()).unwrap();
-                    println!("{}", format!("{},{}",ip,"key"));
+                    let m = ip.clone();
+                    let m: Vec<&str> = m.split('|').collect();
+                    slv_ip = m[1].to_string();
+                    let m = m[2].parse::<u8>().unwrap();
+                    let mut report = report.lock().unwrap();
+                    let ( header,  body) = report.get(&m).unwrap();
+                    let body: Value = {
+                        let body = String::from_utf8(body.to_vec()).unwrap();
+                        serde_json::from_str(&body).unwrap()
+                    };
+                    let body = base64::decode(&body["isvEnclaveQuoteBody"].as_str().unwrap().to_owned()).unwrap();
+                    // println!("pub key: {:?}", &body[399..432]);
+                    // server_session.write(format!("{}|{:?}",ip, &body[399..432]).as_bytes()).unwrap();
+                    let mut data: Vec<u8> = ip.as_bytes().to_vec();
+                    data.extend_from_slice(&body[399..432]);
+                    server_session.write(&data).unwrap();
+                    println!("{}", format!("{}|{:?}",ip, &body[399..432]));
                     // let uq = scheduler.user_queue.clone();
                     // for user in uq{
                     //     println!("sb: {:?}", user.sub_model);

@@ -36,49 +36,9 @@ impl Scheduler {
     fn clone(&self) -> Self {
         Self { map_table: self.map_table.clone(), user_queue: self.user_queue.clone(), slave_queue: self.slave_queue.clone()}
     }
-    // fn model2ip(self, model: &a' str) -> &a' str {
-    //     let ip = match model {
-    //         '0' => "127.0.0.1:4242",
-    //         '1' => "127.0.0.1:4243",
-    //         '2' => "127.0.0.1:4244",
-    //         '3' => "127.0.0.1:4245",
-    //         '4' => "127.0.0.1:4246",
-    //         _ => "127.0.0.1:4242",
-    //     }
-    //     ip
-    // }
     // Initialize the mapping table.
     // Maybe there is an easier way for configuraration loading.
     pub fn init(mut self, config: Value) -> Scheduler {
-        // let data: &str = r#"
-        // {
-        //     "server_address": "127.0.0.1:22000",
-        //     "client_address": "127.0.0.1:4240",
-        //     "attestation_address": "127.0.0.1:4240",
-        //     "model": ["resnet18", "mobilenetv1"],
-        //     "slave_address": {
-        //         "resnet18": {
-        //             "slave": {
-        //                 "0": "127.0.0.1:32100",
-        //                 "1": "127.0.0.1:4241",
-        //                 "2": "127.0.0.1:4242",
-        //                 "3": "127.0.0.1:4243",
-        //                 "4": "127.0.0.1:4244"
-        //             }
-        //         },
-        //         "mobilenetv1": {
-        //             "slave": {
-        //                 "0": "127.0.0.1:4250",
-        //                 "1": "127.0.0.1:4251",
-        //                 "2": "127.0.0.1:4252",
-        //                 "3": "127.0.0.1:4253",
-        //                 "4": "127.0.0.1:4254",
-        //                 "5": "127.0.0.1:4255"
-        //             }
-        //         }
-        //     }
-        // }"#;
-        // let config:  Value = serde_json::from_str(data).unwrap();
         let map_table = config.clone();
         let user_queue: Vec<User> = vec![];
         let mut slave_queue: Vec<Slave> = vec![];
@@ -88,9 +48,6 @@ impl Scheduler {
         for i in 0..map_table["slave_address"]["mobilenetv1"]["slave"].as_object().unwrap().len(){
             slave_queue.push(Slave{busy_flag: false, slave_ip: config["slave_address"]["mobilenetv1"]["slave"][i.to_string()].as_str().unwrap().to_string().clone()})
         }
-        // let slave_queue: Vec<Slave> = vec![Slave{busy_flag: false, slave_ip: "127.0.0.1:4242"}, Slave{busy_flag: false, slave_ip: "127.0.0.1:4243"}, 
-        // Slave{busy_flag: false, slave_ip: "127.0.0.1:4244"}, Slave{busy_flag: false, slave_ip: "127.0.0.1:4245"}, Slave{busy_flag: false, slave_ip: "127.0.0.1:4246"},
-        // Slave{busy_flag: false, slave_ip: "127.0.0.1:4247"}, Slave{busy_flag: false, slave_ip: "127.0.0.1:4248"}];
         Scheduler {map_table, user_queue, slave_queue}        
     }
     pub fn is_slave_busy(self, slave_ip: String) -> Result<(Slave, bool)>{
@@ -119,7 +76,7 @@ impl Scheduler {
         }
         // println!("{:?}", model);
         let m = model.clone();
-        let m: Vec<&str> = m.split(',').collect();
+        let m: Vec<&str> = m.split('|').collect();
         let m = m[0].to_string();
         for md in self.map_table.clone()["model"].as_array().unwrap(){
             let md = md.as_str().unwrap();
@@ -154,18 +111,20 @@ impl Scheduler {
     pub fn apply4slave(&mut self, model: String, last_slave_ip: String) -> String{
         let mut ip = "".to_string();
         let mut prefix = "";
+        let mut model_num = "".to_string();
         for i in 0..self.user_queue.len(){
             let usr = self.user_queue[i].clone();
             if model == usr.model{
                 let sc = self.clone();
 
                 let m = model.clone();
-                let m: Vec<&str> = m.split(',').collect();
+                let m: Vec<&str> = m.split('|').collect();
                 let m = m[0].to_string();
                 println!("{:?}", usr.sub_model[0].clone());
+                model_num = usr.sub_model[0].clone();
                 ip = self.map_table["slave_address"][m]["slave"][usr.sub_model[0].clone()].as_str().unwrap().to_string();
                 let (slv, result) = sc.is_slave_busy(ip.clone()).unwrap();
-                println!("{:?}", last_slave_ip);
+                println!("last_slave_ip {:?}", last_slave_ip);
                 if result {
                     return ip.clone().to_string();
                 }
@@ -173,7 +132,7 @@ impl Scheduler {
                 self.change_slave_flag(slv.slave_ip.clone());
                 self.change_slave_flag(last_slave_ip.clone());
                 self.user_queue[i].sub_model.remove(0);
-                println!("len {:?}", self.user_queue[i].sub_model.len());
+                // println!("len {:?}", self.user_queue[i].sub_model.len());
                 if self.user_queue[i].sub_model.len() == 0{
                     // println!("inferring end");
                     self.user_queue.remove(i);
@@ -182,7 +141,7 @@ impl Scheduler {
                 // println!("hit: {:?}", self.slave_queue[0].busy_flag);
             }
         }
-        format!("{},{}",prefix, ip)
+        format!("{}|{}|{}",prefix, ip, model_num)
     }
     pub fn user_success(mut self, slave_ip: String){
 

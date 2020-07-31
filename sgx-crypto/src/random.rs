@@ -1,4 +1,4 @@
-pub use mbedtls::rng::EntropyCallback;
+pub use mbedtls::rng::{Random, EntropyCallback};
 
 #[cfg(not(target_env = "sgx"))]
 pub fn entropy_new<'a>() -> mbedtls::rng::OsEntropy<'a> {
@@ -16,6 +16,10 @@ impl Rng {
         Self {
             inner: mbedtls::rng::Rdrand,
         }
+    }
+    pub fn random(&mut self, data: &mut [u8]) -> super::Result<()> {
+        self.inner.random(data).expect("generate random failed");
+        Ok(())
     }
 }
 

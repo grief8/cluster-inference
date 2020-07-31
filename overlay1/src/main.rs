@@ -29,6 +29,7 @@ use sgx_crypto::{
     tls_psk::client,
     aes_gcm::AESGCM,
     random::Rng,
+    signature::VerificationKey,
 };
 use std::net::{TcpListener, TcpStream};
 use mbedtls::rng::CtrDrbg;
@@ -69,10 +70,22 @@ fn gen_input_data(shape: (i32, i32, i32, i32)) -> Vec<f32>{
     ran
 }
 
-fn launch_slave_session(address: &str, pub_key: &str, message: &mut [u8]) -> Vec<u8>{
+fn launch_slave_session(address: &str, public_key: Vec<u8>, message: &mut [u8]) -> Vec<u8>{
     println!("connecting to {:#?}", address);
     let mut enclave_stream = TcpStream::connect(address).unwrap();
     let mut rng = Rng::new();
+    let mut nonce = vec![0u8;16];
+    rng.random(&mut nonce[..]).unwrap();
+    // println!("nonce:{:?}",&nonce);
+    enclave_stream.write_all(&nonce).unwrap();
+    let len  = enclave_stream.read_u32::<NetworkEndian>().unwrap() as usize;
+    let mut sign_mess = vec![0u8;len];
+    enclave_stream.read_exact(&mut sign_mess[..]).unwrap();
+    println!("sign_mess:{:?}",&sign_mess);
+    let mut verify_key = VerificationKey::new_from_binary(&public_key).expect("get new verify public key failed!");
+    verify_key.verify(&nonce, &sign_mess).expect("verify failed!");
+    // println!("nonce:{:?}",&nonce);
+
     let dh_key = DHKE::generate_keypair(&mut rng).expect("generate ecdh key pair failed!");
     let dh_public = dh_key.get_public_key().expect("get ecdh public key failed!");
     let len = dh_public.len() as u32;
@@ -123,7 +136,7 @@ fn main() {
     let mut usr_data = unsafe{
         slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, data.len() * 4).to_vec()
     };
-    println!("connecting to scheduler {:?}", client_address);
+    // println!("connecting to scheduler {:?}", client_address);
     let mut socket = TcpStream::connect(client_address).unwrap();
     let mut entropy = entropy_new();
     let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
@@ -140,13 +153,14 @@ fn main() {
     println!("attestation time: {:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
 
     let mut sy_time = SystemTime::now();
-    client_session.write("resnet18,127.0.0.1".as_bytes());
+    client_session.write("resnet18|127.0.0.1".as_bytes());
     // let usr_data = Vec:new();
     loop{
-        let mut array: [u8; 256] = [0; 256];
+        let mut array: [u8; 256] = [0; 256]; 
         client_session.read(&mut array).unwrap();
         let mut array = array.to_vec();
         array.retain(|&x| x != 0);
+        let mut public_key = array.split_off(array.len()-33);
         let mut msg = match std::string::String::from_utf8(array) {
             Ok(v) => v,
             Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
@@ -158,26 +172,30 @@ fn main() {
             msg = msg.strip_suffix('\n').unwrap().to_string();
         }
         if msg.starts_with("finished"){
-            let message:Vec<&str> = msg.split(",").collect();
-            let mut data = launch_slave_session(message[1], message[2], &mut usr_data);
-            // usr_data.clear();
-            // usr_data.append(&mut data);
-            println!("result: {:#?}", data);
+            let message:Vec<&str> = msg.split("|").collect();
+            println!("message: {:?}", public_key);
+            let mut verify_key = VerificationKey::new_from_binary(&public_key).expect("get new verify public key failed!");
+            // println!("verify_key: {:?}", verify_key);
+            let mut data = launch_slave_session(message[1], public_key, &mut usr_data);
+            usr_data.clear();
+            usr_data.append(&mut data);
+            // println!("result: {:#?}", data);
             break;
         }
         else {
-            let message:Vec<&str> = msg.split(",").collect();
-            // println!("message: {:?}", message);
+            let message:Vec<&str> = msg.split("|").collect();
+            // println!("message: {:?}", public_key); 
+            let mut verify_key = VerificationKey::new_from_binary(&public_key).expect("get new verify public key failed!");
             // let ts1 = timestamp();
             // println!("slave TimeStamp: {}", ts1);
-            let mut data = launch_slave_session(message[1], message[2],&mut usr_data);
+            let mut data = launch_slave_session(message[1], public_key, &mut usr_data);
             usr_data.clear();
             usr_data.append(&mut data);
             println!("usr_data.len: {}", usr_data.len());
-            client_session.write("resnet18,127.0.0.1".as_bytes());
+            client_session.write("resnet18|127.0.0.1".as_bytes());
         }
     }
-    println!("total time: {:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
+    // println!("total time: {:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
  }
  
 pub fn verify_report(sock: &mut Session) -> Result<Vec<u8>>{
@@ -188,8 +206,10 @@ pub fn verify_report(sock: &mut Session) -> Result<Vec<u8>>{
     let len  = sock.read_u32::<NetworkEndian>().unwrap() as usize;
     let mut body = vec![0u8; len];
     sock.read_exact(&mut body[..]).unwrap();
+    let sy_time = SystemTime::now();
     let attresp = AttestationResponse::from_response(&header.map, body).unwrap();
     let quote = base64::decode(&attresp.isv_enclave_quote_body).unwrap();
+    println!("verification time: {:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
     // if cfg!(feature = "verbose") {
     //     println!("\nmr enclave value:");
     //     for i in &quote[112..144]{

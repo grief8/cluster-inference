@@ -30,6 +30,7 @@ use sgx_crypto::{
     tls_psk::client,
     aes_gcm::AESGCM,
     random::Rng,
+    signature::SigningKey,
 };
 use ra_enclave::tls_enclave::attestation;
 use mbedtls::pk::Pk;
@@ -63,6 +64,7 @@ fn timestamp() -> i64 {
 
 fn main() {
     let mut thread_vec = vec![];
+    // let 
     let handle = thread::spawn(move ||{
         println!("attestation start");
         let config = include_str!(concat!(env!("PWD"), "/config"));
@@ -71,12 +73,13 @@ fn main() {
         let sp_address = config["sp_address"].as_str().unwrap();
         let mut sign_key = attestation(client_address, sp_address, keep_message).unwrap();
         println!("attestation end");
+        do_tvm(&mut sign_key);
     });
     thread_vec.push(handle);
-    let handle = thread::spawn(move ||{
-        do_tvm();
-    });
-    thread_vec.push(handle);
+    // let handle = thread::spawn(move ||{
+    //     do_tvm();
+    // });
+    // thread_vec.push(handle);
     for handle in thread_vec {
         // Wait for the thread to finish. Returns a result.
         let _ = handle.join().unwrap();
@@ -93,7 +96,7 @@ pub fn keep_message(session:Session){
     write!(&mut sess, "{}", msg).unwrap();
 }
 
-pub fn do_tvm(){
+pub fn do_tvm(sign_key: &mut SigningKey){
     let config = include_str!(concat!(env!("PWD"), "/config"));
     let config: Value = serde_json::from_str(config).unwrap();
     let server_address = config["server_address"].as_str().unwrap();
@@ -112,6 +115,13 @@ pub fn do_tvm(){
         println!("server_session connect!");
         let mut server_session = stream.unwrap();
         let mut rng = Rng::new();
+        let mut nonce = vec![0u8;16];
+        server_session.read_exact(&mut nonce[..]).unwrap();
+        let sign_mess = sign_key.ecdsa_sign(&nonce, &mut rng).unwrap();
+        let len = sign_mess.len() as u32;
+        server_session.write_u32::<NetworkEndian>(len).unwrap();
+        server_session.write_all(&sign_mess).unwrap();
+
         let dh_key = DHKE::generate_keypair(&mut rng).expect("generate ecdh key pair failed!");
         let dh_public = dh_key.get_public_key().expect("get ecdh public key failed!");
         let len  = server_session.read_u32::<NetworkEndian>().unwrap() as usize;
