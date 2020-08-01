@@ -66,6 +66,7 @@ fn gen_input_data(shape: (i32, i32, i32, i32)) -> Vec<f32>{
 
 fn launch_slave_session(address: &str, pub_key: &str, data: &mut [u8]){
     println!("connecting to {:#?}", address);
+    let mut sy_time = SystemTime::now();
     let mut socket = TcpStream::connect(address).unwrap();
     let mut entropy = entropy_new();
     let mut rng = CtrDrbg::new(&mut entropy, None).unwrap();
@@ -75,8 +76,13 @@ fn launch_slave_session(address: &str, pub_key: &str, data: &mut [u8]){
     config.set_ca_list(Some(&mut *cert), None);
     let mut ctx = Context::new(&config).unwrap();
     let mut client_session = ctx.establish(&mut socket, None).unwrap();
+    println!("establish {:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
+    sy_time = SystemTime::now();
     client_session.write(data);
+    println!("send data {:?}", &data[502112..502144]);
     client_session.read(data).unwrap();
+    println!("recv data {:?}", &data[502112..502144]);
+    println!("compute {:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
 
 }
 fn main() {
@@ -95,7 +101,7 @@ fn main() {
     
     let mut data= gen_input_data((1, 3, 224, 224));
     let mut user_data = unsafe{
-        slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, data.len() * 4)
+        slice::from_raw_parts_mut(data.as_mut_ptr() as *mut u8, 1024 * 1024 * 40)
     };
     println!("connecting to scheduler {:?}", client_address);
     // let ts1 = timestamp();
