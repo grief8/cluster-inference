@@ -16,6 +16,7 @@ use sgxs::sigstruct;
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::time::SystemTime;
 use std::path::Path;
 // use aesm_client::unix::AesmClientExt;
 
@@ -92,32 +93,35 @@ impl<'a> SpRaContext<'a> {
         if cfg!(feature = "verbose") {
             eprintln!("MSG0 received ");
         }
-
+        let sy_time = SystemTime::now();
         let msg1: RaMsg1 = bincode::deserialize_from(&mut client_stream)?;
         if cfg!(feature = "verbose") {
             eprintln!("MSG1 received");
         }
-
+        println!("{:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
+        let sy_time = SystemTime::now();
         let msg2 = self.process_msg_1(msg1).await?;
         if cfg!(feature = "verbose") {
             eprintln!("MSG1 processed");
         }
-
         bincode::serialize_into(&mut client_stream, &msg2)?;
         if cfg!(feature = "verbose") {
             eprintln!("MSG2 sent");
         }
-
+        println!("{:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
+        let sy_time = SystemTime::now();
         let msg3: RaMsg3 = bincode::deserialize_from(&mut client_stream)?;
         if cfg!(feature = "verbose") {
             eprintln!("MSG3 received");
         }
-
+        println!("{:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
+        let sy_time = SystemTime::now();
         let (msg4, epid_pseudonym) = self.process_msg_3(msg3).await?;
         if cfg!(feature = "verbose") {
             eprintln!("MSG4 generated");
         }
-
+        println!("{:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
+        let sy_time = SystemTime::now();
         bincode::serialize_into(&mut client_stream, &msg4)?;
         if cfg!(feature = "verbose") {
             eprintln!("MSG4 sent");
@@ -136,7 +140,7 @@ impl<'a> SpRaContext<'a> {
         }
 
         let (signing_key, master_key) = self.sk_mk.take().unwrap();
-
+        println!("{:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
         Ok(AttestationResult {
             epid_pseudonym,
             signing_key,
@@ -206,10 +210,12 @@ impl<'a> SpRaContext<'a> {
 
         // Verify attestation evidence
         // TODO: use the secondary key as well
+        let sy_time = SystemTime::now();
         let attestation_result = self
             .ias_client
             .verify_attestation_evidence(&msg3.quote, &self.config.primary_subscription_key)
             .await?;
+        println!("{:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
 
         if cfg!(feature = "verbose") {
             eprintln!("==============Attestation Result==============");

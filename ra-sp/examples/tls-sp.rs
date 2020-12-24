@@ -49,7 +49,7 @@ fn main() {
                 let mut context = SpRaContext::init(spconfig, &mut entropy).unwrap();
                 let result = match context.do_attestation(&mut stream){
                     Ok(result)=>{
-                        let mut  http_resp = mem::replace(&mut context.get_ias_client().http_resp, None).unwrap();
+                        let mut http_resp = mem::replace(&mut context.get_ias_client().http_resp, None).unwrap();
                         http_report.insert(context.get_spconfig().enclave_id, http_resp);
                         println!("enclave_id: {}", context.get_spconfig().enclave_id);
                         result

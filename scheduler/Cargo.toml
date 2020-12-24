@@ -26,7 +26,7 @@ default = ["byteorder", "verbose"]
 verbose = []
 
 [dependencies]
-tvm-runtime = { path = "/home/lifabing/tvm/rust/runtime" }
+# tvm-runtime = { path = "/home/lifabing/tvm/rust/runtime" }
 ndarray = "0.12"
 rand = "0.3.17"
 # mbedtls = {version="0.5", default-features = false, features = ["sgx"]}

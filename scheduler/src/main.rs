@@ -17,7 +17,7 @@
  * under the License.
  */
 
-extern crate tvm_runtime;
+// extern crate tvm_runtime;
 extern crate ndarray;
 extern crate rand;
 extern crate byteorder;
@@ -82,17 +82,21 @@ fn main() -> std::io::Result<()> {
     let mut slave_queue: Vec<Slave> = vec![];
     let scheduler = Scheduler {map_table: map_table, user_queue, slave_queue }.init(config.clone());
     println!("attestation start");
+    let mut sy_time = SystemTime::now();
     let mut report = HashMap::new();
     let mut sign_key = attestation_get_report(client_address, sp_address, keep_message, &mut report).unwrap();
     {
+        println!(" report get {:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
+        sy_time = SystemTime::now();
         let mut rng = Rng::new();
         let message = [0x1,0x2,0x3,0x4,0x5,0x6,0x7];
         let sign_mess = sign_key.ecdsa_sign(&message, &mut rng).unwrap();
         let public_key = sign_key.get_public_key().unwrap();
-        println!("public_key:{:x?}", &public_key);
+        // println!("public_key:{:x?}", &public_key);
         let mut verify_key = VerificationKey::new_from_binary(&public_key).expect("get new verify public key failed!");
         verify_key.verify(&message, &sign_mess).expect("verify failed!");
     }
+    println!("verificaiton {:?}", SystemTime::now().duration_since(sy_time).unwrap().as_micros());
     println!("attestation end");
 
     let listener = TcpListener::bind(server_address).unwrap();
