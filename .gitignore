@@ -1,4 +1,4 @@
-target/
+*target/
 *.lock
 */Cargo.lock
 */model.o
@@ -6,3 +6,4 @@ target/
 model.o
 best-partion/
 model/
+.vscode/

@@ -1,9 +1,0 @@
-{
-    "python.analysis.extraPaths": [
-        // ${workspaceFolder} 并不能产生效果，要使用绝对目录
-        "/home/lww/project/03_TVM/tvm/python",
-        "/home/lww/project/03_TVM/tvm/topi/python",
-        "/home/lww/project/03_TVM/tvm/nnvm/python",
-        "/home/lww/project/03_TVM/tvm/vta/python"
-    ],
-}
