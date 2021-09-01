@@ -1,7 +1,7 @@
 *target/
 *.lock
 */Cargo.lock
-*/model.o
+*.o
 *.pem
 model.o
 best-partion/
